@@ -1,0 +1,57 @@
+;; The 'match-array' macro takes an odd number of arguments, 
+;; where each pair describes a match and the last form is the 'else' branch.
+;;
+;; An array pattern consists of a list, containing one or more:
+;; - value
+;; - '_' (wildcard)
+;;
+;; A pattern will be matched when all non-wildcard values are equal, and the size of the array
+;; is equal to the pattern count
+
+(defmacro match-array [xs :rest forms]
+	(build-match-internal xs forms))
+
+(defdynamic build-match-internal [xs forms]
+	(if (= (count forms) 0)
+		(list)
+		(if (= (count forms) 2)
+			(macro-error "ERROR")
+			(if (= (count forms) 1)
+				(car forms)
+				(list 'if (match-array-pattern xs (car forms))
+					(cadr forms)					
+					(build-match-internal xs (cddr forms)))))))
+
+(defdynamic build-pattern [current xs i p]
+	(if (= (count p) 0)
+			current	;; return
+		(if (and (symbol? (car p)) (= (car p) '_)) ;; more
+			(build-pattern current xs (inc i) (cdr p)) ;; skip
+			(build-pattern 
+				(cons
+					(list '= (car p)
+						(list 'copy (list 'Array.nth xs i)))
+					current)
+				xs (inc i) (cdr p)))))
+
+(defdynamic match-array-pattern [xs p]
+	(cons 'and*
+		(cons
+			(list 'Int.= (list 'Array.count xs) (count p))
+			(build-pattern () xs 0 p))))
+
+
+;; TESTS
+(defn test-match-array-int [xs]
+	(match-array xs
+		(1 _ 1 _) true
+		(1 _ 0 _) true
+		(_ _ 4)	  true
+		false))
+
+(use IO)
+(defn main []
+	(do
+		(println &(str (test-match-array-int &[1 0 1 0])))
+		(println &(str (test-match-array-int &[1 2 3 4])))))
+
