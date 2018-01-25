@@ -101,7 +101,8 @@
 
 (defn test-match-array-destr [xs]
   (match-array xs
-    [_ a _ 0] a     ;; destructure value into a variable
+    [_ a b 0] (+ a b)     ;; destructure value into a variable
+    [a _ _ 1] a
     -1))
 
 (defn test-match-array-destr-ref [xs]
@@ -123,7 +124,7 @@
                 (test-match-array-str &[@"foo" @"bar" @"baz"]) 
                 "matching String-array")
     (assert-equal test
-                  (test-match-array-destr &[3 2 1 0]) 2
+                  (test-match-array-destr &[3 2 1 0]) 3
                   "matching Int-array + destructuring")
     (assert-true test
                 (test-match-array-destr-ref &[3 2 1 0])
