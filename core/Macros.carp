@@ -195,5 +195,12 @@
 (defmacro println* [:rest forms]
   (list 'IO.println (list 'ref (build-str* forms))))
 
+
 (defmacro ignore [form]
   (let [_ form] ()))
+
+(defdynamic macro-log-return [obj]
+  (do
+    (macro-log obj)
+    obj))
+

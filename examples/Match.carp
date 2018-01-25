@@ -1,57 +1,132 @@
-;; The 'match-array' macro takes an odd number of arguments, 
+;; The 'match-array' macro takes a list, and then an odd number of arguments, 
 ;; where each pair describes a match and the last form is the 'else' branch.
+;;
+;; The 'match-array-with' macro takes a list of reference symbols, a list and then 
+;; an odd number of arguments, where each pair describes a match and the last form 
+;; is the 'else' branch.
 ;;
 ;; An array pattern consists of a list, containing one or more:
 ;; - value
+;; - a symbol
 ;; - '_' (wildcard)
 ;;
 ;; A pattern will be matched when all non-wildcard values are equal, and the size of the array
 ;; is equal to the pattern count
+;;
+;; Destructuring is done on all symbols in case of 'match-array', 
+;; or all symbols not in the reference list in 'match-array-with'.
 
 (defmacro match-array [xs :rest forms]
-	(build-match-internal xs forms))
+  (build-match-internal () xs forms))
 
-(defdynamic build-match-internal [xs forms]
-	(if (= (count forms) 0)
-		(list)
-		(if (= (count forms) 2)
-			(macro-error "ERROR")
-			(if (= (count forms) 1)
-				(car forms)
-				(list 'if (match-array-pattern xs (car forms))
-					(cadr forms)					
-					(build-match-internal xs (cddr forms)))))))
+(defmacro match-array-with [refs xs :rest forms]
+  (build-match-internal refs xs forms))
 
-(defdynamic build-pattern [current xs i p]
-	(if (= (count p) 0)
-			current	;; return
-		(if (and (symbol? (car p)) (= (car p) '_)) ;; more
-			(build-pattern current xs (inc i) (cdr p)) ;; skip
-			(build-pattern 
-				(cons
-					(list '= (car p)
-						(list 'copy (list 'Array.nth xs i)))
-					current)
-				xs (inc i) (cdr p)))))
+(defdynamic build-from-pattern [current refs xs i p]
+  (if (= (count p) 0)
+    current
+    (if (or (not (symbol? (car p))) 
+        (and (symbol? (car p)) (or (= (car p) '_) (contains refs (car p)))))
+      (build-from-pattern current refs xs (inc i) (cdr p)) ;; skip
+      (build-from-pattern 
+        (cons
+          (car p) (cons (list 'copy (list 'Array.nth xs i))
+          current))
+        refs xs (inc i) (cdr p)))))
 
-(defdynamic match-array-pattern [xs p]
-	(cons 'and*
-		(cons
-			(list 'Int.= (list 'Array.count xs) (count p))
-			(build-pattern () xs 0 p))))
+(defdynamic list-to-array [l current]
+  (if (= (count l) 0)
+    current
+    (list-to-array (all-but-last l) 
+      (cons (last l) current))))
+
+(defdynamic destr-array [refs xs pattern return]
+  (list 'let
+      (list-to-array (build-from-pattern () refs xs 0 pattern) [])
+    return))
+
+(defdynamic build-match-internal [refs xs forms]
+  (if (= (count forms) 0)
+    (list)
+    (if (= (count forms) 2)
+      (macro-error "ERROR")
+      (if (= (count forms) 1)
+        (car forms)
+        (list 'if (match-array-pattern refs xs (car forms))
+          (destr-array refs xs (car forms) (cadr forms))
+          (build-match-internal refs xs (cddr forms)))))))
+
+(defdynamic contains [xs e]
+  (if (= (count xs) 0)
+    false
+    (contains (cdr xs) e)))
+
+(defdynamic build-pattern [current refs xs i p]
+  (if (= (count p) 0)
+      current ;; return
+    (if (and (symbol? (car p)) (not (contains refs (car p))))
+    ;(= (car p) '_)) ;; more
+      (build-pattern current refs xs (inc i) (cdr p)) ;; skip
+      (build-pattern 
+        (cons
+          (list '= (car p)
+            (list 'copy (list 'Array.nth xs i)))
+          current)
+        refs xs (inc i) (cdr p)))))
+
+(defdynamic match-array-pattern [refs xs p]
+  (cons 'and*
+    (cons
+      (list 'Int.= (list 'Array.count xs) (count p))
+      (build-pattern () refs xs 0 p))))
 
 
 ;; TESTS
-(defn test-match-array-int [xs]
-	(match-array xs
-		(1 _ 1 _) true
-		(1 _ 0 _) true
-		(_ _ 4)	  true
-		false))
-
 (use IO)
+(load "Test.carp")
+(use Test)
+
+
+(defn test-match-array-int [xs]
+  (match-array xs
+    [1 _ 1 _] true
+    [1 _ 0 _] true
+    [_ _ 4]   true
+    false))
+
+(defn test-match-array-str [xs]
+  (match-array xs
+    [_ _ @"baz"] true
+    false))
+
+(defn test-match-array-destr [xs]
+  (match-array xs
+    [_ a _ 0] a     ;; destructure value into a variable
+    -1))
+
+(defn test-match-array-destr-ref [xs]
+  (let [a 2]
+    (match-array-with (a) xs  ;; reference a as value, not as destructured variable
+      [_ a _ 0] true
+      false)))
+
+
 (defn main []
-	(do
-		(println &(str (test-match-array-int &[1 0 1 0])))
-		(println &(str (test-match-array-int &[1 2 3 4])))))
+  (with-test test
+    (assert-true test 
+                (test-match-array-int &[1 0 1 0]) 
+                "matching Int-array: matching pattern")
+    (assert-false test 
+                  (test-match-array-int &[1 2 3 4]) 
+                  "matching Int-array: else branch")
+    (assert-true test 
+                (test-match-array-str &[@"foo" @"bar" @"baz"]) 
+                "matching String-array")
+    (assert-equal test
+                  (test-match-array-destr &[3 2 1 0]) 2
+                  "matching Int-array + destructuring")
+    (assert-true test
+                (test-match-array-destr-ref &[3 2 1 0])
+                "matching Int-array + destructuring + 'with'")
+    (print-test-results test)))
 
