@@ -363,6 +363,12 @@ commandIsList [x] =
     XObj (Lst _) _ _ -> return (Right trueXObj)
     _ -> return (Right falseXObj)
 
+commandIsArray :: CommandCallback
+commandIsArray [x] =
+  case x of
+    XObj (Arr _) _ _ -> return (Right trueXObj)
+    _ -> return (Right falseXObj)
+
 commandIsSymbol :: CommandCallback
 commandIsSymbol [x] =
   case x of
@@ -409,7 +415,7 @@ commandCons [x, xs] =
   case xs of
     XObj (Lst lst) _ _ -> return (Right (XObj (Lst (x : lst)) (info x) (ty x))) -- TODO: probably not correct to just copy 'i' and 't'?
     XObj (Arr arr) _ _ -> return (Right (XObj (Arr (x : arr)) (info x) (ty x)))
-    _ -> return (Left (EvalError "Applying 'cons' to non-list or empty list."))
+    _ -> return (Left (EvalError $ "Applying 'cons' to non-list or empty list: " ++ pretty x ++ " and " ++ pretty xs))
 
 commandConsLast :: CommandCallback
 commandConsLast [x, xs] =
