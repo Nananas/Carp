@@ -204,3 +204,26 @@
     (macro-log obj)
     obj))
 
+(defdynamic list-to-array [l current]
+  (if (= (count l) 0)
+    current
+    (list-to-array (all-but-last l) 
+      (cons (last l) current))))
+
+(defdynamic contains [xs e]
+  (if (= (count xs) 0)
+    false
+    (if (= (car xs) e)
+      true
+      (contains (cdr xs) e))))
+
+(defdynamic contains-recursive [xs e]
+  (if (not (list? xs))
+    (= xs e)
+    (if (= (count xs) 0)
+      false
+        (if (list? (car xs))
+          (contains-recursive (car xs) e)
+          (if (= (car xs) e)
+            true
+            (contains-recursive (cdr xs) e))))))

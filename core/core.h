@@ -185,6 +185,8 @@ int Int_random() {
 
 int Int_random_MINUS_between(int lower, int upper) {
     int diff = upper - lower;
+    if (diff == 0)
+        return lower;
     return lower + (rand() % diff);
 }
 
