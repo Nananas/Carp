@@ -1,0 +1,209 @@
+(use Int)
+(use Array)
+(use IO)
+(use String)
+(use System)
+
+
+(load "sdl.carp")
+(load "sdl_image.carp")
+(load "render.carp")
+(load "../macros/match.carp")
+(load "../macros/thread-pos.carp")
+
+(def LEFT 0)
+(def RIGHT 1)
+(def UP 2)
+(def DOWN 3)
+
+
+(defmacro ++ [:rest strs]
+  (string-join- strs))
+
+
+;(project-set! "printAST" "true")
+
+(def i 0) ;; act as captured value
+
+(defn lambda-cellfromnumber [c]
+  (=> (bit-shift-right i c)
+      (bit-and 1)))
+
+(defn cell-from-number [j]
+  (do
+    (set! &i j) ;; set captured value
+    (repeat-indexed 9
+      lambda-cellfromnumber)))
+
+
+(defn genallcells []
+  (repeat-indexed (pow 2 9) cell-from-number))
+
+
+(defn validcell [c]
+  (match-array c
+    [0 1 _  1 _ _  _ _ _]   false
+    [_ 1 0  _ _ 1  _ _ _]   false
+    [_ _ _  _ _ 1  _ 1 0]   false
+    [_ _ _  1 _ _  0 1 _]   false
+    [_ 1 _  1 _ 1  _ 1 _]   false
+    [0 0 0  0 1 0  0 0 0]   true
+    [_ _ _  _ 1 _  _ _ _]   false   
+    [0 0 0  0 0 0  0 0 0]   false
+    [_ _ _  _ _ _  _ _ _]   true
+    false))
+
+
+(defn cell-direction [cell dir]
+  (match-array cell 
+    [a b c  d _ e  f g h] 
+      (case @dir
+        LEFT  [a d f]
+        RIGHT [c e h]
+        UP    [a b c]
+        DOWN  [f g h]
+        [])
+    []))
+
+(defn flip-dir [dir]
+  (case @dir
+    UP    DOWN
+    DOWN  UP
+    LEFT  RIGHT
+    RIGHT LEFT
+    -1))
+
+(defn connects [c1 c2 dir]
+  (= &(cell-direction c1 dir) &(cell-direction c2 &(flip-dir dir))))
+
+(def cell (the (Array Int) []))
+(def direction &0)
+
+(defn L-connects [c]
+  (the Bool (connects &cell c direction)))
+
+(defn matchable-cells [c dir cells]
+  (do
+    (set! &direction dir)
+    (set! &cell @c)
+    (filter L-connects @cells)))
+
+(defn positive? [x]
+  (>= @x 0))
+
+(def exclude-dir -1)
+(defn exclude [x]
+  (/= @x exclude-dir))
+
+(defn available-directions [cell excl-dir]
+  (let-do [r []
+           NO -1]
+    (set! &exclude-dir excl-dir)
+    (==>
+      (filter positive? ;; lambda
+        (=> r
+          (push-back (match-array cell [1 _ _ 1 _ _ 1 _ _] NO LEFT)) ;; only go right for now
+          (push-back (match-array cell [_ _ 1 _ _ 1 _ _ 1] NO RIGHT))
+          (push-back (match-array cell [1 1 1 _ _ _ _ _ _] NO UP))
+          (push-back (match-array cell [_ _ _ _ _ _ 1 1 1] NO DOWN))))
+      (filter exclude)))) ;; lambda
+
+(deftype Pos [x Int y Int])
+
+(defn shifted-pos [pos dir]
+  (let-do [new (Pos.init @(Pos.x pos) @(Pos.y pos))]
+    (case @dir
+      UP    (Pos.set-y! &new (- @(Pos.y pos) CS))
+      DOWN  (Pos.set-y! &new (+ @(Pos.y pos) CS))
+      LEFT  (Pos.set-x! &new (- @(Pos.x pos) CS))
+      RIGHT (Pos.set-x! &new (+ @(Pos.x pos) CS))
+    ())
+    new))
+
+
+(defmacro pick-random [xs]
+  (list 'nth xs (list 'random-between 0 (list 'count xs))))
+
+(defn int-or [a b]
+  (if (and (= a 1) (= b 1)) 
+    1
+    0))
+
+(defn int-and [a b]
+  (if (and (= a 0) (= b 0)) 
+    0
+    1))
+
+(defn blend-cell [c1 c2]
+  (let-do [cnew @c1]
+    (for [i 0 (count c1)]
+      (if (= i 4)
+        (aset! &cnew i (int-and @(nth c1 i) @(nth c2 i)))
+        (aset! &cnew i (int-or @(nth c1 i) @(nth c2 i)))))
+    cnew))
+
+(deftype Cell [data (Array Int) pos Pos])
+
+(defn dig [valid-cells nbr-digs excl-dir start-cell]
+  (let [result [start-cell]]
+    (do
+      (for [k 0 nbr-digs]
+        (let [prev      (nth &result (dec (count &result)))
+              prevcell   (Cell.data prev)
+              prevpos    (Cell.pos  prev)
+              av-dir     &(available-directions prevcell excl-dir)]
+          (if (= (count av-dir) 0) 
+            (break)
+            (let [dir        (pick-random av-dir)
+                  valid-next (matchable-cells prevcell dir valid-cells)
+                  nextcell   @(pick-random &valid-next)
+                  nextpos    &(shifted-pos prevpos dir)]
+              (do
+                (for [i 0 (count &result)]
+                  (let [ipos  (=> (nth &result i) Cell.pos)
+                        icell (=> (nth &result i) Cell.data)]
+                    (when (and (= (Pos.x ipos) (Pos.x nextpos))
+                               (= (Pos.y ipos) (Pos.y nextpos)))
+                      (==> (blend-cell icell &nextcell)
+                           (set! &nextcell)))))
+                (if (= (random-between 0 50) 1)
+                  (let-do [side-tunnel (dig valid-cells 20 DOWN (Cell.init @&nextcell @nextpos))]
+                    (println &(str &side-tunnel))
+                    (for [s 1 (count &side-tunnel)]
+                      (set! &result (push-back result @(nth &side-tunnel s)))))
+                  ())
+
+                (==> (Cell.init @&nextcell @nextpos)
+                     (push-back result)
+                     (set! &result)))))))
+      result)))
+
+
+(defn main []
+  (do
+    (seed (time))
+    (let-do [app (app-init @"Cells" 800 600)
+            rend (app-renderer app)
+            cells (filter validcell (genallcells))
+
+            tunnel1 (==> (Pos.init 100 300)               ;; start position
+                         (Cell.init @(pick-random &cells));; start cell
+                         (dig &cells 100 LEFT))]               ;; dig tunnel
+      (while true
+        (do
+          (handle-events &app rend)
+          (SDL_SetRenderDrawBlendMode rend SDL_BLENDMODE_BLEND)
+          (SDL_SetRenderDrawColor rend 0 0 0 0)
+          (SDL_RenderClear rend)
+
+          (for [i 0 (count &tunnel1)]
+            (_> (nth &tunnel1 i)
+              (render-cell
+                (Cell.data _)
+                @(Pos.x (Cell.pos _))
+                @(Pos.y (Cell.pos _))
+                rend)))
+
+          (SDL_RenderPresent rend)
+          (SDL_Delay 100))))
+    ()))
