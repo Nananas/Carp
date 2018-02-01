@@ -8,8 +8,8 @@
 (load "sdl.carp")
 (load "sdl_image.carp")
 (load "render.carp")
-(load "../../macros/match.carp")
-(load "../../macros/thread-pos.carp")
+(load "match.carp")
+(load "thread-pos.carp")
 
 (def LEFT 0)
 (def RIGHT 1)
