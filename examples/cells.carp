@@ -9,7 +9,7 @@
 (load "sdl_image.carp")
 (load "render.carp")
 (load "match.carp")
-(load "thread-pos.carp")
+; (load "thread-pos.carp")
 
 (def LEFT 0)
 (def RIGHT 1)
@@ -198,11 +198,11 @@
           (SDL_RenderClear rend)
 
           (for [i 0 (count &tunnel1)]
-            (_> (nth &tunnel1 i)
+            (let [n (nth &tunnel1 i)]
               (render-cell
-                (Cell.data _)
-                @(Pos.x (Cell.pos _))
-                @(Pos.y (Cell.pos _))
+                (Cell.data n)
+                @(Pos.x (Cell.pos n))
+                @(Pos.y (Cell.pos n))
                 rend)))
 
           (SDL_RenderPresent rend)
