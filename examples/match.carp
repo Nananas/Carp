@@ -64,60 +64,60 @@
         refs xs (inc i) (cdr p)))))
 
 ;; TESTS
-(use IO)
-(load "Test.carp")
-(use Test)
+; (use IO)
+; (load "Test.carp")
+; (use Test)
 
 
-(defn test-match-array-int [xs]
-  (match-array xs
-    [1 _ 1 _] true
-    [1 _ 0 _] true
-    [_ _ 4]   true
-    false))
+; (defn test-match-array-int [xs]
+;   (match-array xs
+;     [1 _ 1 _] true
+;     [1 _ 0 _] true
+;     [_ _ 4]   true
+;     false))
 
-(defn test-match-array-str [xs]
-  (match-array xs
-    [_ _ @"baz"] true
-    false))
+; (defn test-match-array-str [xs]
+;   (match-array xs
+;     [_ _ @"baz"] true
+;     false))
 
-(defn test-match-array-destr [xs]
-  (match-array xs
-    [_ a b 0] (+ a b)     ;; destructure value into a variable
-    [a _ _ 1] a
-    -1))
+; (defn test-match-array-destr [xs]
+;   (match-array xs
+;     [_ a b 0] (+ a b)     ;; destructure value into a variable
+;     [a _ _ 1] a
+;     -1))
 
-(defn test-match-array-destr-ref [xs]
-  (let [a 2]
-    (match-array [a] xs  ;; reference a as value, not as destructured variable
-      [_ a _ 0] true
-      false)))
+; (defn test-match-array-destr-ref [xs]
+;   (let [a 2]
+;     (match-array [a] xs  ;; reference a as value, not as destructured variable
+;       [_ a _ 0] true
+;       false)))
 
-(defn test-match-array-destr-str [xs]
-    (match-array xs
-      [_ a @"baz"] (= a @"bar")
-      false))
+; (defn test-match-array-destr-str [xs]
+;     (match-array xs
+;       [_ a @"baz"] (= a @"bar")
+;       false))
 
-(defn main []
-  (with-test test
-    (assert-true test 
-                (test-match-array-int &[1 0 1 0]) 
-                "matching Int-array: matching pattern")
-    (assert-false test 
-                  (test-match-array-int &[1 2 3 4]) 
-                  "matching Int-array: else branch")
-    (assert-true test 
-                (test-match-array-str &[@"foo" @"bar" @"baz"]) 
-                "matching String-array")
-    (assert-equal test
-                  (test-match-array-destr &[3 2 1 0]) 3
-                  "matching Int-array + destructuring")
-    (assert-true test
-                (test-match-array-destr-ref &[3 2 1 0])
-                "matching Int-array + destructuring + 'with'")
-    (assert-true test 
-                (test-match-array-destr-str &[@"foo" @"bar" @"baz"]) 
-                "matching String-array + destructuring")
+; (defn main []
+;   (with-test test
+;     (assert-true test 
+;                 (test-match-array-int &[1 0 1 0]) 
+;                 "matching Int-array: matching pattern")
+;     (assert-false test 
+;                   (test-match-array-int &[1 2 3 4]) 
+;                   "matching Int-array: else branch")
+;     (assert-true test 
+;                 (test-match-array-str &[@"foo" @"bar" @"baz"]) 
+;                 "matching String-array")
+;     (assert-equal test
+;                   (test-match-array-destr &[3 2 1 0]) 3
+;                   "matching Int-array + destructuring")
+;     (assert-true test
+;                 (test-match-array-destr-ref &[3 2 1 0])
+;                 "matching Int-array + destructuring + 'with'")
+;     (assert-true test 
+;                 (test-match-array-destr-str &[@"foo" @"bar" @"baz"]) 
+;                 "matching String-array + destructuring")
 
-    (print-test-results test)))
+;     (print-test-results test)))
 
