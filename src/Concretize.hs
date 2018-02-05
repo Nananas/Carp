@@ -13,9 +13,9 @@ import Types
 import Util
 import TypeError
 import AssignTypes
-import ManageMemory
 import Polymorphism
 import InitialTypes
+import Lookup
 
 -- | This function performs two things:
 -- |  1. Finds out which polymorphic functions that needs to be added to the environment for the calls in the function to work.
@@ -57,13 +57,13 @@ concretizeXObj allowAmbiguityRoot typeEnv rootEnv visitedDefinitions root =
                           else return [defn, nameSymbol, args, okBody]
 
     visitList _ env (XObj (Lst [defn@(XObj Defn _ _), nameSymbol, args@(XObj (Arr argsArr) _ _), body]) _ t) =
-      do mapM_ checkForNeedOfTypedefs argsArr
+      do mapM_ (concretizeTypeOfXObj typeEnv) argsArr
          let functionEnv = Env Map.empty (Just env) Nothing [] InternalEnv
              envWithArgs = foldl' (\e arg@(XObj (Sym (SymPath _ argSymName) _) _ _) ->
                                      extendEnv e argSymName arg)
                                   functionEnv argsArr
              Just funcTy = t
-             allowAmbig = typeIsGeneric funcTy
+             allowAmbig = isTypeGeneric funcTy
          visitedBody <- visit allowAmbig envWithArgs body
          return $ do okBody <- visitedBody
                      return [defn, nameSymbol, args, okBody]
@@ -71,7 +71,7 @@ concretizeXObj allowAmbiguityRoot typeEnv rootEnv visitedDefinitions root =
     visitList allowAmbig env (XObj (Lst [letExpr@(XObj Let _ _), XObj (Arr bindings) bindi bindt, body]) _ _) =
       do visitedBindings <- fmap sequence (mapM (visit allowAmbig env) bindings)
          visitedBody <- visit allowAmbig env body
-         mapM_ checkForNeedOfTypedefs (map fst (pairwise bindings))
+         mapM_ (concretizeTypeOfXObj typeEnv) (map fst (pairwise bindings))
          return $ do okVisitedBindings <- visitedBindings
                      okVisitedBody <- visitedBody
                      return [letExpr, XObj (Arr okVisitedBindings) bindi bindt, okVisitedBody]
@@ -82,20 +82,13 @@ concretizeXObj allowAmbiguityRoot typeEnv rootEnv visitedDefinitions root =
                      return [theExpr, typeXObj, okVisitedValue]
 
     visitList allowAmbig env (XObj (Lst (func : args)) _ _) =
-      do f <- visit allowAmbig env func
+      do concretizeTypeOfXObj typeEnv func
+         mapM_ (concretizeTypeOfXObj typeEnv) args
+         f <- visit allowAmbig env func
          a <- fmap sequence (mapM (visit allowAmbig env) args)
          return $ do okF <- f
                      okA <- a
                      return (okF : okA)
-
-    checkForNeedOfTypedefs :: XObj -> State [XObj] (Either TypeError ())
-    checkForNeedOfTypedefs (XObj _ _ (Just t)) =
-      case t of
-        (FuncTy _ _) | typeIsGeneric t -> return (Right ())
-                     | otherwise -> do modify (defineFunctionTypeAlias t :)
-                                       return (Right ())
-        _ -> return (Right ())
-    checkForNeedOfTypedefs _ = error "Missing type."
 
     visitSymbol :: Bool -> Env -> XObj -> State [XObj] (Either TypeError XObj)
     visitSymbol allowAmbig env xobj@(XObj (Sym path lookupMode) i t) =
@@ -108,7 +101,7 @@ concretizeXObj allowAmbiguityRoot typeEnv rootEnv visitedDefinitions root =
                                   Just something -> something
                                   Nothing -> error ("Missing type on " ++ show xobj ++ " at " ++ prettyInfoFromXObj xobj)
             in if --(trace $ "CHECKING " ++ getName xobj ++ " : " ++ show theType ++ " with visited type " ++ show typeOfVisited ++ " and visited definitions: " ++ show visitedDefinitions) $
-                  typeIsGeneric theType && not (typeIsGeneric typeOfVisited)
+                  isTypeGeneric theType && not (isTypeGeneric typeOfVisited)
                   then case concretizeDefinition allowAmbig typeEnv env visitedDefinitions theXObj typeOfVisited of
                          Left err -> return (Left err)
                          Right (concrete, deps) ->
@@ -186,15 +179,73 @@ concretizeXObj allowAmbiguityRoot typeEnv rootEnv visitedDefinitions root =
         Nothing ->
           error ("No interface named '" ++ name ++ "' found.")
 
+-- | Do the signatures match?
 matchingSignature :: Ty -> (Ty, SymPath) -> Bool
-matchingSignature tA (tB, _) =
-  let result = areUnifiable tA tB
-  in --(trace ("Are " ++ show tA ++ " unifyable with " ++ show tB ++ "? " ++ show result))
-     result
+matchingSignature tA (tB, _) = areUnifiable tA tB
 
--- matchingNonGenericSignature :: Ty -> (Ty, SymPath) -> Bool
--- matchingNonGenericSignature actualType (t, s) =
---   matchingSignature actualType (t, s) && not (typeIsGeneric t)
+-- | Does the type of an XObj require additional concretization of generic types or some typedefs for function types, etc?
+-- | If so, perform the concretization and append the results to the list of dependencies.
+concretizeTypeOfXObj :: TypeEnv -> XObj -> State [XObj] (Either TypeError ())
+concretizeTypeOfXObj typeEnv (XObj _ _ (Just t)) =
+  case concretizeType typeEnv t of
+    Right t -> do modify (t ++)
+                  return (Right ())
+    Left err -> return (Left (InvalidMemberType err))
+concretizeTypeOfXObj _ xobj = return (Right ()) --error ("Missing type: " ++ show xobj)
+
+-- | Find all the concrete deps of a type.
+concretizeType :: TypeEnv -> Ty -> Either String [XObj]
+concretizeType _ ft@(FuncTy _ _) =
+  if isTypeGeneric ft
+  then Right []
+  else Right [defineFunctionTypeAlias ft]
+concretizeType typeEnv arrayTy@(StructTy "Array" varTys) =
+  do deps <- mapM (concretizeType typeEnv) varTys
+     Right ([defineArrayTypeAlias arrayTy] ++ concat deps)
+concretizeType typeEnv genericStructTy@(StructTy name _) =
+  case lookupInEnv (SymPath [] name) (getTypeEnv typeEnv) of
+    Just (_, Binder (XObj (Lst (XObj (Typ originalStructTy) _ _ : _ : rest)) _ _)) ->
+      if isTypeGeneric originalStructTy
+      then instantiateGenericStructType typeEnv originalStructTy genericStructTy rest
+      else Right []
+    Just (_, Binder (XObj (Lst (XObj ExternalType _ _ : _)) _ _)) ->
+      Right []
+    Just (_, Binder x) ->
+      error ("Non-deftype found in type env: " ++ show x)
+    Nothing ->
+      error ("Can't find type " ++ show genericStructTy ++ " with name '" ++ name ++ "' in type env.")
+concretizeType _ t =
+    Right [] -- ignore all other types
+
+-- | Given an generic struct type and a concrete version of it, generate all dependencies needed to use the concrete one.
+instantiateGenericStructType :: TypeEnv -> Ty -> Ty -> [XObj] -> Either String [XObj]
+instantiateGenericStructType typeEnv originalStructTy@(StructTy _ originalTyVars) genericStructTy membersXObjs =
+  -- Turn (deftype (A a) [x a, y a]) into (deftype (A Int) [x Int, y Int])
+  let fake1 = XObj (Sym (SymPath [] "a") Symbol) Nothing Nothing
+      fake2 = XObj (Sym (SymPath [] "b") Symbol) Nothing Nothing
+      XObj (Arr memberXObjs) _ _ = head membersXObjs
+  in  case solve [Constraint originalStructTy genericStructTy fake1 fake2 OrdMultiSym] of
+        Left e -> error (show e)
+        Right mappings ->
+          let concretelyTypedMembers = replaceGenericTypeSymbolsOnMembers mappings memberXObjs
+          in  case validateMembers typeEnv originalTyVars concretelyTypedMembers of
+                Left err -> Left err
+                Right () ->
+                  let deps = sequence (map (f typeEnv) (pairwise concretelyTypedMembers))
+                  in case deps of
+                       Left err -> Left err
+                       Right okDeps ->
+                         Right $ [ XObj (Lst (XObj (Typ genericStructTy) Nothing Nothing :
+                                              XObj (Sym (SymPath [] (tyToC genericStructTy)) Symbol) Nothing Nothing :
+                                              [(XObj (Arr concretelyTypedMembers) Nothing Nothing)])
+                                        ) (Just dummyInfo) (Just TypeTy)
+                                 ] ++ concat okDeps
+
+f :: TypeEnv -> (XObj, XObj) -> Either String [XObj]
+f typeEnv (_, tyXObj) =
+  case (xobjToTy tyXObj) of
+    Just okTy -> concretizeType typeEnv okTy
+    Nothing -> error ("Failed to convert " ++ pretty tyXObj ++ "to a type.")
 
 -- | Get the type of a symbol at a given path.
 typeFromPath :: Env -> SymPath -> Ty

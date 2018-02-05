@@ -40,6 +40,10 @@ int event_MINUS_type(SDL_Event *e) {
     return e->type;
 }
 
+int event_MINUS_button(SDL_Event *e) {
+    return e->button.button;
+}
+
 SDL_Keycode event_MINUS_keycode(SDL_Event *e) {
     return e->key.keysym.sym;
 }

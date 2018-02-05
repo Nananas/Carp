@@ -6,11 +6,12 @@
 * 1.0 - The completed version of the language with all planned features and extra nice ergonomics.
 
 ## Critical Bugs
-* [0.3] The compiler can crash when defining invalid struct types, it should present nice errors instead.
 * [0.3] Must handle deletion of temporary values used during initialization of global variables.
 * [0.3] When 'set!':ing a global variable, memory can leak.
 
 ## Big Language Features
+* [0.3] Deps function for templates should return an Either to enable errors when instantiating deps.
+
 * [0.4] Doc strings.
 * [0.4] Kind-checking for types (make sure the type variables match, etc).
 
@@ -43,7 +44,6 @@
 
 ## Tooling
 * [0.3] Project setting for turning off bound checks and similar ("--optimize"). Should also run the C compiler at at least -O2.
-* [0.3] Errors in the parser or emitter don't stop evaluation, only errors during evaluation?
 * [0.3] Somehow make it possible to enter ":t foo" at the REPL (can't be done now because each atom is evaluated separately)
 * [0.3] The (project-set! ...) command should accept args of various types, not just String.
 * [0.3] When running :rb, shouldn't carp stop when :r returns an error, instead of building the wrong main.c?

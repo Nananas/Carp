@@ -68,6 +68,7 @@
 (register SDL_Event_init (Fn [] SDL_Event))
 (register event-type (Fn [(Ref SDL_Event)] Int))
 (register event-keycode (Fn [(Ref SDL_Event)] SDL_Keycode))
+(register event-button (Fn [(Ref SDL_Event)] Int))
 
 ;; Keys
 (register-type SDL_Keycode)

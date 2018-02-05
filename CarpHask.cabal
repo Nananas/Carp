@@ -31,11 +31,13 @@ library
                        InitialTypes,
                        AssignTypes,
                        GenerateConstraints,
-                       ManageMemory,
                        Polymorphism,
                        Concretize,
                        ArrayTemplates,
-                       Expand
+                       Expand,
+                       Scoring,
+                       Lookup,
+                       Qualify
 
   build-depends:       base >= 4.7 && < 5
                      , parsec == 3.1.*
