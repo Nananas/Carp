@@ -5,6 +5,7 @@
 (use System)
 
 
+
 (load "sdl.carp")
 (load "sdl_image.carp")
 (load "render.carp")
@@ -31,7 +32,7 @@
 
 (defn cell-from-number [j]
   (do
-    (set! &i j) ;; set captured value
+    (set! i j) ;; set captured value
     (repeat-indexed 9
       lambda-cellfromnumber)))
 
@@ -84,8 +85,8 @@
 
 (defn matchable-cells [c dir cells]
   (do
-    (set! &direction dir)
-    (set! &cell @c)
+    (set! direction dir)
+    (set! cell @c)
     (filter L-connects @cells)))
 
 (defn positive? [x]
@@ -98,17 +99,20 @@
 (defn available-directions [cell excl-dir]
   (let-do [r []
            NO -1]
-    (set! &exclude-dir excl-dir)
-    (==>
-      (filter positive? ;; lambda
+    (set! exclude-dir excl-dir)
+    ; (==>
+    (set! r (filter positive? ;; lambda
         (=> r
           (push-back (match-array cell [1 _ _ 1 _ _ 1 _ _] NO LEFT)) ;; only go right for now
           (push-back (match-array cell [_ _ 1 _ _ 1 _ _ 1] NO RIGHT))
           (push-back (match-array cell [1 1 1 _ _ _ _ _ _] NO UP))
-          (push-back (match-array cell [_ _ _ _ _ _ 1 1 1] NO DOWN))))
-      (filter exclude)))) ;; lambda
+          (push-back (match-array cell [_ _ _ _ _ _ 1 1 1] NO DOWN)))))
+    (println &(str (= &r &[excl-dir])))
+    (if (= &r &[excl-dir])
+      r
+      (filter exclude r))))
+      ; ))) ;; lambda
 
-(deftype Pos [x Int y Int])
 
 (defn shifted-pos [pos dir]
   (let-do [new (Pos.init @(Pos.x pos) @(Pos.y pos))]
@@ -135,22 +139,20 @@
     1))
 
 (defn blend-cell [c1 c2]
-  (let-do [cnew @c1]
+  (let-do [cnew c1]
     (for [i 0 (count c1)]
       (if (= i 4)
-        (aset! &cnew i (int-and @(nth c1 i) @(nth c2 i)))
-        (aset! &cnew i (int-or @(nth c1 i) @(nth c2 i)))))
-    cnew))
-
-(deftype Cell [data (Array Int) pos Pos])
+        (aset! cnew i (int-and @(nth c1 i) @(nth c2 i)))
+        (aset! cnew i (int-or @(nth c1 i) @(nth c2 i)))))
+    @cnew))
 
 
 ;; TODO: make a separate side-tunnel-dig
-(defn dig [valid-cells nbr-digs excl-dir start-cell]
-  (let [result [start-cell]]
-    (do
-      (for [k 0 nbr-digs]
-        (let [prev      (nth &result (dec (count &result)))
+(defn dig [valid-cells nbr-digs-left excl-dir tunnel]
+  (do
+    (while (> nbr-digs-left 0)
+      (do
+        (let [prev       (nth &tunnel (dec (count &tunnel)))
               prevcell   (Cell.data prev)
               prevpos    (Cell.pos  prev)
               av-dir     &(available-directions prevcell excl-dir)]
@@ -161,24 +163,30 @@
                   nextcell   @(pick-random &valid-next)
                   nextpos    &(shifted-pos prevpos dir)]
               (do
-                (for [i 0 (count &result)]
-                  (let [ipos  (=> (nth &result i) Cell.pos)
-                        icell (=> (nth &result i) Cell.data)]
+                (println &(str av-dir))
+                (for [i 0 (count &tunnel)]
+                  (let [ipos  (=> (nth &tunnel i) Cell.pos)
+                        icell (=> (nth &tunnel i) Cell.data)]
                     (when (and (= (Pos.x ipos) (Pos.x nextpos))
                                (= (Pos.y ipos) (Pos.y nextpos)))
                       (==> (blend-cell icell &nextcell)
-                           (set! &nextcell)))))
-                (if (= (random-between 0 50) 1)
-                  (let-do [side-tunnel (dig valid-cells 20 DOWN (Cell.init @&nextcell @nextpos))]
-                    (for [s 1 (count &side-tunnel)]
-                      (set! &result (push-back result @(nth &side-tunnel s)))))
-                  ())
+                           (set! nextcell)))))
 
                 (==> (Cell.init @&nextcell @nextpos)
-                     (push-back result)
-                     (set! &result)))))))
-      result)))
+                     (push-back tunnel)
+                     (set! tunnel))
 
+                (when (= (random-between 0 50) 1)
+                  (let-do [tmppos prevpos]
+                    (set! tunnel (dig valid-cells 20 -1 tunnel))
+                    (set! nbr-digs-left (- nbr-digs-left 20))
+                    (set! prevpos tmppos)))
+
+                ))))
+
+        (update! nbr-digs-left dec)))
+
+    tunnel))
 
 (defn main []
   (do
@@ -186,24 +194,29 @@
     (let-do [app (app-init @"Cells" 800 600)
             rend (app-renderer app)
             cells (filter validcell (genallcells))
-
-            tunnel1 (==> (Pos.init 100 300)               ;; start position
-                         (Cell.init @(pick-random &cells));; start cell
-                         (dig &cells 100 LEFT))]               ;; dig tunnel
+            start-cell (Cell.init @(pick-random &cells) (Pos.init half-width half-height))
+            state (State.init 
+                    (dig &cells 100 LEFT [@&start-cell])
+                    0 0)]
       (while true
         (do
-          (handle-events &app rend)
+          (set! state (handle-events &app rend state))
+
+          (when (= (count (State.data &state)) 0)
+            (State.set-data! &state (dig &cells 100 LEFT [@&start-cell])))
           (SDL_SetRenderDrawBlendMode rend SDL_BLENDMODE_BLEND)
           (SDL_SetRenderDrawColor rend 0 0 0 0)
           (SDL_RenderClear rend)
 
-          (for [i 0 (count &tunnel1)]
-            (let [n (nth &tunnel1 i)]
+          (for [i 0 (count (State.data &state))]
+            (let [n (nth (State.data &state) i)]
               (render-cell
                 (Cell.data n)
                 @(Pos.x (Cell.pos n))
                 @(Pos.y (Cell.pos n))
-                rend)))
+                rend
+                @(State.cx &state)
+                @(State.cy &state))))
 
           (SDL_RenderPresent rend)
           (SDL_Delay 100))))
