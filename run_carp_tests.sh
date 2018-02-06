@@ -16,18 +16,17 @@ carp ./examples/generic_structs.carp -x;
 carp ./examples/setting_variables.carp -x;
 
 # Actual tests (using the test suite)
-carp ./test/memory.carp -x --log-memory;
 for f in ./test/*.carp; do
-  echo $f
-  if [ $f != "./test/memory.carp" ]; then
-    carp -x $f
-  fi
-  echo
+    echo $f
+    carp -x --log-memory $f
+    echo
 done
 
 # Just make sure these compile
 carp ./examples/mutual_recursion.carp -b;
 carp ./examples/guessing.carp -b;
+carp ./examples/ant.carp -b
+carp ./examples/reptile.carp -b
 carp ./examples/game.carp -b;
 
 echo "ALL TESTS DONE."

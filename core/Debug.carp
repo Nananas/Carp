@@ -30,3 +30,12 @@
       x))
 
   )
+
+(defmacro assert [expr]
+  (list 'if (list '= true expr)
+        ()
+        (list 'do
+              (list 'IO.println (list 'ref
+                                      (list 'String.append (list 'String.copy "Assertion failed ")
+                                            (list 'String.copy (source-location)))))
+              '(System.exit 1))))

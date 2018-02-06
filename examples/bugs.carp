@@ -30,8 +30,9 @@
 ;;     (do (String.delete s)
 ;;         (IO.println r))))
 
-;; Problem with string deallocation in branches.
-(defn ifmem []
-  (if true
-    (IO.println &@"TEST")
-    ()))
+(use Array)
+
+(def g (copy (nth &[@"A" @"B" @"C"] 1)))
+
+(defn main []
+  (IO.println &g))

@@ -4,6 +4,7 @@ import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Maybe (fromMaybe)
 import qualified Data.Set as Set
+import Data.Set ((\\))
 import Data.List (foldl')
 import Debug.Trace
 
@@ -458,6 +459,17 @@ manageMemory typeEnv globalEnv root =
                             Right _ ->
                               do okBody <- visitedBody
                                  return (XObj (Lst [defn, nameSymbol, args, okBody]) i t)
+
+            [def@(XObj Def _ _), nameSymbol@(XObj (Sym _ _) _ _), expr] ->
+              do visitedExpr <- visit expr
+                 result <- unmanage expr
+                 return $
+                   case result of
+                     Left e -> Left e
+                     Right () ->
+                       do okExpr <- visitedExpr
+                          return (XObj (Lst [def, nameSymbol, okExpr]) i t)
+
             [letExpr@(XObj Let _ _), XObj (Arr bindings) bindi bindt, body] ->
               let Just letReturnType = t
               in case letReturnType of
@@ -481,33 +493,47 @@ manageMemory typeEnv globalEnv root =
                             return $ do okBody <- visitedBody
                                         okBindings <- fmap (concatMap (\(n,x) -> [n, x])) (sequence visitedBindings)
                                         return (XObj (Lst [letExpr, XObj (Arr okBindings) bindi bindt, okBody]) newInfo t)
+
+            -- Set!
             [setbangExpr@(XObj SetBang _ _), variable, value] ->
               do visitedValue <- visit value
                  unmanage value -- The assigned value can't be used anymore
 
                  let varInfo = info variable
-                     correctVariable = case variable of
-                                         -- DISABLE FOR NOW: (XObj (Lst (XObj (Sym (SymPath _ "copy") _) _ _ : symObj@(XObj (Sym _ _) _ _) : _)) _ _) -> Right symObj
-                                         symObj@(XObj (Sym _ _) _ _) -> Right symObj
-                                         anythingElse -> Left (CannotSet anythingElse)
+                     correctVariableAndMode =
+                       case variable of
+                         -- DISABLE FOR NOW: (XObj (Lst (XObj (Sym (SymPath _ "copy") _) _ _ : symObj@(XObj (Sym _ _) _ _) : _)) _ _) -> Right symObj
+                         symObj@(XObj (Sym _ mode) _ _) -> Right (symObj, mode)
+                         anythingElse -> Left (CannotSet anythingElse)
 
-                 case correctVariable of
+                 case correctVariableAndMode of
                    Left err ->
                      return (Left err)
-                   Right okCorrectVariable ->
+                   Right (okCorrectVariable, okMode) ->
                      do MemState managed deps  <- get
                         -- Delete the value previously stored in the variable, if it's still alive
                         let deleters = case createDeleter okCorrectVariable of
                                          Just d  -> Set.fromList [d]
                                          Nothing -> Set.empty
-                            newVarInfo = setDeletersOnInfo varInfo deleters
                             newVariable =
-                              if Set.size (Set.intersection managed deleters) == 1 -- The variable is still alive
-                              then variable { info = newVarInfo }
-                              else variable -- don't add the new info = no deleter
+                              case okMode of
+                                Symbol -> error "How to handle this?"
+                                LookupLocal ->
+                                  if Set.size (Set.intersection managed deleters) == 1 -- The variable is still alive
+                                  then variable { info = setDeletersOnInfo varInfo deleters }
+                                  else variable -- don't add the new info = no deleter
+                                LookupGlobal ->
+                                  variable { info = setDeletersOnInfo varInfo deleters }
 
-                        when True $ -- Should be when the variable itself isn't a ref
-                          manage okCorrectVariable -- The variable can be used again
+                            traceDeps = trace ("SET!-deleters for " ++ pretty xobj ++ " at " ++ prettyInfoFromXObj xobj ++ ":\n" ++
+                                               "unmanaged " ++ pretty value ++ "\n" ++
+                                               "managed: " ++ show managed ++ "\n" ++
+                                               "deleters: " ++ show deleters ++ "\n")
+
+                        case okMode of
+                          Symbol -> error "Should only be be a global/local lookup symbol."
+                          LookupLocal -> manage okCorrectVariable
+                          LookupGlobal -> return ()
 
                         return $ do okValue <- visitedValue
                                     return (XObj (Lst [setbangExpr, newVariable, okValue]) i t)
@@ -516,6 +542,7 @@ manageMemory typeEnv globalEnv root =
               do visitedValue <- visit value
                  return $ do okValue <- visitedValue
                              return (XObj (Lst [addressExpr, okValue]) i t)
+
             [theExpr@(XObj The _ _), typeXObj, value] ->
               do visitedValue <- visit value
                  result <- transferOwnership value xobj
@@ -523,6 +550,7 @@ manageMemory typeEnv globalEnv root =
                             Left e -> Left e
                             Right _ -> do okValue <- visitedValue
                                           return (XObj (Lst [theExpr, typeXObj, okValue]) i t)
+
             [refExpr@(XObj Ref _ _), value] ->
               do visitedValue <- visit value
                  case visitedValue of
@@ -532,6 +560,7 @@ manageMemory typeEnv globalEnv root =
                         case checkResult of
                           Left e -> return (Left e)
                           Right () -> return $ Right (XObj (Lst [refExpr, visitedValue]) i t)
+
             doExpr@(XObj Do _ _) : expressions ->
               do visitedExpressions <- mapM visit expressions
                  result <- transferOwnership (last expressions) xobj
@@ -539,6 +568,7 @@ manageMemory typeEnv globalEnv root =
                             Left e -> Left e
                             Right _ -> do okExpressions <- sequence visitedExpressions
                                           return (XObj (Lst (doExpr : okExpressions)) i t)
+
             [whileExpr@(XObj While _ _), expr, body] ->
               do MemState preDeleters _ <- get
                  visitedExpr <- visit expr
@@ -559,35 +589,56 @@ manageMemory typeEnv globalEnv root =
 
             [ifExpr@(XObj If _ _), expr, ifTrue, ifFalse] ->
               do visitedExpr <- visit expr
-                 MemState deleters deps <- get
+                 MemState preDeleters deps <- get
 
                  let (visitedTrue,  stillAliveTrue)  = runState (do { v <- visit ifTrue;
                                                                       result <- transferOwnership ifTrue xobj;
                                                                       return $ case result of
-                                                                                 Left e -> Left e
-                                                                                 Right _ -> v
+                                                                                 Left e -> error (show e) -- Left e
+                                                                                 Right () -> v
                                                                     })
-                                                       (MemState deleters deps)
+                                                       (MemState preDeleters deps)
 
                      (visitedFalse, stillAliveFalse) = runState (do { v <- visit ifFalse;
                                                                       result <- transferOwnership ifFalse xobj;
                                                                       return $ case result of
-                                                                                 Left e -> Left e
-                                                                                 Right _ -> v
+                                                                                 Left e -> error (show e) -- Left e
+                                                                                 Right () -> v
                                                                     })
-                                                       (MemState deleters deps)
+                                                       (MemState preDeleters deps)
 
-                 let removeTrue  = memStateDeleters stillAliveTrue
-                     removeFalse = memStateDeleters stillAliveFalse
-                     -- TODO! Handle deps from stillAliveTrue/stillAliveFalse
-                     deletedInTrue  = deleters Set.\\ removeTrue
-                     deletedInFalse = deleters Set.\\ removeFalse
-                     common = Set.intersection deletedInTrue deletedInFalse
-                     delsTrue  = deletedInFalse Set.\\ common
-                     delsFalse = deletedInTrue  Set.\\ common
-                     stillAlive = deleters Set.\\ Set.union deletedInTrue deletedInFalse
+                 let -- TODO! Handle deps from stillAliveTrue/stillAliveFalse
+                     deletedInTrue  = preDeleters \\ (memStateDeleters stillAliveTrue)
+                     deletedInFalse = preDeleters \\ (memStateDeleters stillAliveFalse)
+                     deletedInBoth  = Set.intersection deletedInTrue deletedInFalse
+                     createdInTrue  = (memStateDeleters stillAliveTrue)  \\ preDeleters
+                     createdInFalse = (memStateDeleters stillAliveFalse) \\ preDeleters
+                     selfDeleter = case createDeleter xobj of
+                                     Just ok -> Set.fromList [ok]
+                                     Nothing -> Set.empty
+                     createdAndDeletedInTrue  = createdInTrue  \\ selfDeleter
+                     createdAndDeletedInFalse = createdInFalse \\ selfDeleter
+                     delsTrue  = Set.union (deletedInFalse \\ deletedInBoth) createdAndDeletedInTrue
+                     delsFalse = Set.union (deletedInTrue  \\ deletedInBoth) createdAndDeletedInFalse
+                     stillAliveAfter = preDeleters \\ (Set.union deletedInTrue deletedInFalse)
 
-                 put (MemState stillAlive deps)
+                     traceDeps = trace ("IF-deleters for " ++ pretty xobj ++ " at " ++ prettyInfoFromXObj xobj ++ " " ++ identifierStr xobj ++ ":\n" ++
+                                        "preDeleters: " ++ show (preDeleters) ++ "\n" ++
+                                        "stillAliveTrue: " ++ show (memStateDeleters stillAliveTrue) ++ "\n" ++
+                                        "stillAliveFalse: " ++ show (memStateDeleters stillAliveFalse) ++ "\n" ++
+                                        "createdInTrue: " ++ show (createdInTrue) ++ "\n" ++
+                                        "createdInFalse: " ++ show (createdInFalse) ++ "\n" ++
+                                        "createdAndDeletedInTrue: " ++ show (createdAndDeletedInTrue) ++ "\n" ++
+                                        "createdAndDeletedInFalse: " ++ show (createdAndDeletedInFalse) ++ "\n" ++
+                                        "deletedInTrue: " ++ show (deletedInTrue) ++ "\n" ++
+                                        "deletedInFalse: " ++ show (deletedInFalse) ++ "\n" ++
+                                        "deletedInBoth: " ++ show (deletedInBoth) ++ "\n" ++
+                                        "delsTrue: " ++ show (delsTrue) ++ "\n" ++
+                                        "delsFalse: " ++ show (delsFalse) ++ "\n" ++
+                                        "stillAlive: " ++ show (stillAliveAfter) ++ "\n"
+                                       )
+
+                 put (MemState stillAliveAfter deps)
                  manage xobj
 
                  return $ do okExpr  <- visitedExpr
@@ -691,9 +742,8 @@ manageMemory typeEnv globalEnv root =
           do result <- unmanage from
              case result of
                Left e -> return (Left e)
-               Right _ -> do manage to
+               Right _ -> do manage to --(trace ("Transfered from " ++ getName from ++ " '" ++ varOfXObj from ++ "' to " ++ getName to ++ " '" ++ varOfXObj to ++ "'") to)
                              return (Right ())
-             --trace ("Transfered from " ++ getName from ++ " '" ++ varOfXObj from ++ "' to " ++ getName to ++ " '" ++ varOfXObj to ++ "'") $ return ()
 
         varOfXObj :: XObj -> String
         varOfXObj xobj =
