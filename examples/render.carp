@@ -7,11 +7,6 @@
 (def half-width (/ 400 SCALE))
 (def half-height (/ 300 SCALE))
 
-(deftype Pos [x Int y Int])
-(deftype Cell [data (Array Int) pos Pos])
-(deftype State [data (Array Cell) cx Int cy Int])
-
-
 (defn render-cell [cell xx yy renderer cx cy]
   (do
     (for (i 0 (count cell))
@@ -28,38 +23,3 @@
                   (* TS SCALE)
                   (* TS SCALE)))))))))
 
-
-(defn handle-events [app rend state]
-  (let [event (SDL_Event_init)
-        r state]
-    (do
-      (while (SDL_PollEvent (address event))
-        (let [et (event-type &event)]
-          (case et 
-            SDL_QUIT             (quit app)
-            SDL_MOUSEBUTTONDOWN  (State.set-data! &r [])
-            SDL_KEYDOWN          
-              (case (event-keycode &event)
-                SDLK_LEFT   
-                  (do
-                    (println "LEFT")
-                    (State.set-cx! &r (- @(State.cx &r) 20)))
-
-                SDLK_RIGHT  
-                  (do
-                    (println "RIGHT")
-                    (State.set-cx! &r (+ @(State.cx &r) 20)))
-
-                SDLK_UP     
-                  (do
-                    (println "UP")
-                    (State.set-cy! &r (- @(State.cy &r) 20)))
-
-                SDLK_DOWN   
-                  (do
-                    (println "DOWN")
-                    (State.set-cy! &r (+ @(State.cy &r) 20)))
-
-                ())
-            ())))
-      r)))
