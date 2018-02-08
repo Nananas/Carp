@@ -115,12 +115,13 @@
 
 (defn shifted-pos [pos dir]
   (let-do [new (Pos.init @(Pos.x pos) @(Pos.y pos))]
-    (case @dir
-      UP    (Pos.set-y! &new (- @(Pos.y pos) CS))
-      DOWN  (Pos.set-y! &new (+ @(Pos.y pos) CS))
-      LEFT  (Pos.set-x! &new (- @(Pos.x pos) CS))
-      RIGHT (Pos.set-x! &new (+ @(Pos.x pos) CS))
-    ())
+    (with Pos
+      (case @dir
+        UP    (set-y! &new (- @(y pos) CS))
+        DOWN  (set-y! &new (+ @(y pos) CS))
+        LEFT  (set-x! &new (- @(x pos) CS))
+        RIGHT (set-x! &new (+ @(x pos) CS))
+      ()))
     new))
 
 
