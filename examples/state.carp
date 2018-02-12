@@ -3,7 +3,7 @@
 (deftype Pos [x Int y Int])
 (deftype Cell [data (Array Int) pos Pos])
 (deftype State 
-  [data (Array Cell) 
+  [data (Array Cell)  ;; map
    cx Int 
    cy Int
    kup Bool
@@ -20,51 +20,53 @@
   (let [event (SDL_Event_init)]
     (while (SDL_PollEvent (address event))
       (let [et (event-type &event)]
-        (case et 
-          SDL_QUIT             (quit app)
-          SDL_MOUSEBUTTONDOWN  (State.set-data! state [])
-          SDL_KEYDOWN
-            (case (event-keycode &event)
-              SDLK_LEFT (do
-                  (State.set-kleft! state true))
+        (with State
+          (case et 
+            SDL_QUIT             (quit app)
+            SDL_MOUSEBUTTONDOWN  (set-data! state [])
+            SDL_KEYDOWN
+              (case (event-keycode &event)
+                SDLK_LEFT (do
+                    (set-kleft! state true))
 
-              SDLK_RIGHT (do
-                  (State.set-kright! state true))
+                SDLK_RIGHT (do
+                    (set-kright! state true))
 
-              SDLK_UP (do
-                  (State.set-kup! state true))
+                SDLK_UP (do
+                    (set-kup! state true))
 
-              SDLK_DOWN (do
-                  (State.set-kdown! state true))
+                SDLK_DOWN (do
+                    (set-kdown! state true))
 
-              ())
+                ())
 
-          SDL_KEYUP
-            (case (event-keycode &event)
-              SDLK_LEFT (do
-                  (State.set-kleft! state false))
+            SDL_KEYUP
+              (case (event-keycode &event)
+                SDLK_LEFT (do
+                    (set-kleft! state false))
 
-              SDLK_RIGHT (do
-                  (State.set-kright! state false))
+                SDLK_RIGHT (do
+                    (set-kright! state false))
 
-              SDLK_UP (do
-                  (State.set-kup! state false))
+                SDLK_UP (do
+                    (set-kup! state false))
 
-              SDLK_DOWN (do
-                  (State.set-kdown! state false))
+                SDLK_DOWN (do
+                    (set-kdown! state false))
 
-              ())
+                ())
 
-          ())))))
+            ()))))))
 
 
 (defn update-state [state]
-  (do
-    (when @(State.kleft state)
-      (State.set-cx! state (- @(State.cx state) 10)))
-    (when @(State.kright state)
-      (State.set-cx! state (+ @(State.cx state) 10)))
-    (when @(State.kup state)
-      (State.set-cy! state (- @(State.cy state) 10)))
-    (when @(State.kdown state)
-      (State.set-cy! state (+ @(State.cy state) 10)))))
+  (with State
+    (do
+      (when @(kleft state)
+        (set-cx! state (- @(cx state) 10)))
+      (when @(kright state)
+        (set-cx! state (+ @(cx state) 10)))
+      (when @(kup state)
+        (set-cy! state (- @(cy state) 10)))
+      (when @(kdown state)
+        (set-cy! state (+ @(cy state) 10))))))

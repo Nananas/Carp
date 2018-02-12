@@ -33,6 +33,21 @@
       [_ a @"baz"] (= a @"bar")
       false))
 
+; (defn test-match-struct [x]
+  ; (match-struct A x
+    ; (a 1 b 2) true
+    ; (b 3 a 0) true
+    ; false))
+
+; (deftype A [a Int b Int])
+; (defn match-struct [x]
+  ; (with A
+    ; (do
+      ; (if (and (= (a x) 1) (= (b x) 2))
+        ; true
+        ; (if (and (= (b x) 3) (= (a x) 0))
+          ; true
+          ; false)))))
 (defn main []
   (with-test test
     (assert-true test 
