@@ -3,6 +3,7 @@
 (load "Test.carp")
 (use Test)
 
+(load "../examples/match.carp")
 
 (defn test-match-array-int [xs]
   (match-array xs
@@ -33,21 +34,47 @@
       [_ a @"baz"] (= a @"bar")
       false))
 
+(defn test-match-array-end* [xs]
+  (match-array xs
+    [_ 2 *] false
+    [_ 1 *] true
+    false))
+
+(defn test-match-array-start* [xs]
+  (match-array xs
+    [* 3 _] false
+    [* 2 _] true
+    false))
+
+(defn test-match-array-middle* [xs]
+  (match-array xs
+    [_ * 4] false
+    [_ * 3] true
+    false))
+
+(defn test-match-array-string-middle* [xs]
+  (match-array xs
+    [_ * @"foo"] false
+    [_ * @"baz"] true
+    false))
+
+;; TODO: match-struct
 ; (defn test-match-struct [x]
-  ; (match-struct A x
-    ; (a 1 b 2) true
-    ; (b 3 a 0) true
-    ; false))
+;   (match-struct A x
+;     (a 1 b 2) true
+;     (b 3 a 0) true
+;     false))
 
 ; (deftype A [a Int b Int])
 ; (defn match-struct [x]
-  ; (with A
-    ; (do
-      ; (if (and (= (a x) 1) (= (b x) 2))
-        ; true
-        ; (if (and (= (b x) 3) (= (a x) 0))
-          ; true
-          ; false)))))
+;   (with A
+;     (do
+;       (if (and (= (a x) 1) (= (b x) 2))
+;         true
+;         (if (and (= (b x) 3) (= (a x) 0))
+;           true
+;           false)))))
+
 (defn main []
   (with-test test
     (assert-true test 
@@ -68,6 +95,17 @@
     (assert-true test 
                 (test-match-array-destr-str &[@"foo" @"bar" @"baz"]) 
                 "matching String-array + destructuring")
-
+    (assert-true test
+                (test-match-array-end* &[0 1 2 3]) 
+                "matching Int-array: * wildcard at end of array")
+    (assert-true test
+                (test-match-array-start* &[0 1 2 3]) 
+                "matching Int-array: * wildcard at start of array")
+    (assert-true test
+                (test-match-array-middle* &[0 1 2 3]) 
+                "matching Int-array: * wildcard at middle of array")
+    (assert-true test
+                (test-match-array-string-middle* &[@"foo" @"bar" @"bonk" @"baz"]) 
+                "matching String-array: * wildcard at middle of array")
     (print-test-results test)))
 

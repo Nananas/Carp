@@ -6,58 +6,94 @@
 ;; - value
 ;; - a symbol
 ;; - '_' (wildcard)
+;; - '*' (length wildcard)
 ;;
-;; A pattern will be matched when all non-wildcard values are equal, and the size of the array
-;; is equal to the pattern count
+;; A pattern will be matched when all non-wildcard values are equal, and the size of the array is:
+;; - = to the pattern count
+;; - >= to the pattern count when using a '*' wildcard in the pattern (excluding the '*' character)
 ;;
-;; Destructuring is done on all symbols, not in the reference list if it was specified.
+;; So, a pattern like this: [1 * 9] will match an array with [0] = '1' and [length-1] = '9', where length >= 2.
+;;
+;; Note: using more than one '*' wildcard currently results in undefined behaviour.
+;;
+;; Destructuring is done on all symbols not in the reference list (if it was specified).
 
 (defmacro match-array [:rest forms]
   (if (array? (car forms))
-    (build-match-internal (car forms) (cadr forms) (cddr forms))
-    (build-match-internal () (car forms) (cdr forms))))
+    (match-array-internal (car forms) (cadr forms) (cddr forms))
+    (match-array-internal () (car forms) (cdr forms))))
 
-(defdynamic build-match-internal [refs xs forms]
+(defdynamic match-array-internal [refs xs forms]
   (if (= (count forms) 0)
     (list)
     (if (= (count forms) 2)
       (macro-error "ERROR")
       (if (= (count forms) 1)
         (car forms)
-        (list 'if (match-array-pattern refs xs (car forms))
-          (destr-array refs xs (car forms) (cadr forms))
-          (build-match-internal refs xs (cddr forms)))))))
+        (list 'if (match-array-if-pattern refs xs (car forms))
+          (match-array-destructure refs xs (car forms) (cadr forms))
+          (match-array-internal refs xs (cddr forms)))))))
 
-(defdynamic match-array-pattern [refs xs p]
+(defdynamic match-array-if-pattern [refs xs p]
   (cons 'and*
     (cons
-      (list 'Int.= (list 'Array.count xs) (count p))
-      (build-pattern () refs xs 0 p))))
+      (list 
+        (if (contains-symbol? p '*) 'Int.>= 'Int.=)
+        (list 'Array.count xs) 
+        (if (contains-symbol? p '*) (dec (count p)) (count p)))
+      (match-array-build-if-pattern () refs xs 0 p))))
 
-(defdynamic build-pattern [current refs xs i p]
-  (if (= (count p) 0)
-      current ;; return
+(defdynamic reverse [xs]
+  (if (= (count xs) 0)
+    ()
+    (append
+      (reverse (cdr xs))
+      (list (car xs)))))
+
+(defdynamic match-array-build-if-pattern [current refs xs i p]
+  (if (contains-symbol? p '*)
+    (append
+      (match-array-build-if-pattern-part-left current refs xs i p)
+      (match-array-build-if-pattern-part-right current refs xs i (reverse p)))
+    (match-array-build-if-pattern-part-left current refs xs i p)))
+
+(defdynamic match-array-build-if-pattern-part-left [current refs xs i p]
+  (if (or (= (count p) 0) (and (symbol? (car p)) (= (car p) '*)))
+    current ;; return
     (if (and (symbol? (car p)) (not (contains refs (car p))))
-      (build-pattern current refs xs (inc i) (cdr p)) ;; skip
-      (build-pattern 
+      (match-array-build-if-pattern-part-left current refs xs (inc i) (cdr p)) ;; skip
+      (match-array-build-if-pattern-part-left 
         (cons
           (list '= (car p)
             (list 'copy (list 'Array.nth xs i)))
           current)
         refs xs (inc i) (cdr p)))))
-  
-(defdynamic destr-array [refs xs pattern return]
+
+(defdynamic match-array-build-if-pattern-part-right [current refs xs i p]
+  (if (or (= (count p) 0) (and (symbol? (car p)) (= (car p) '*)))
+    current ;; return
+    (if (and (symbol? (car p)) (not (contains refs (car p))))
+      (match-array-build-if-pattern-part-right current refs xs (inc i) (cdr p)) ;; skip
+      (match-array-build-if-pattern-part-right 
+        (cons
+          (list '= (car p)
+            (list 'copy (list 'Array.nth xs (list 'Int.- (list 'Array.count xs) (inc i)))))
+          current)
+        refs xs (inc i) (cdr p)))))
+
+
+(defdynamic match-array-destructure [refs xs pattern return]
   (list 'let
-      (list-to-array (build-from-pattern () refs xs 0 pattern) [])
+      (list-to-array (match-array-build-let-pattern () refs xs 0 pattern) [])
     return))
 
-(defdynamic build-from-pattern [current refs xs i p]
+(defdynamic match-array-build-let-pattern [current refs xs i p]
   (if (= (count p) 0)
     current
-    (if (or (not (symbol? (car p))) 
-        (and (symbol? (car p)) (or (= (car p) '_) (contains refs (car p)))))
-      (build-from-pattern current refs xs (inc i) (cdr p)) ;; skip
-      (build-from-pattern 
+    (if (or (not (symbol? (car p)))
+          (and (symbol? (car p)) (or (or (= (car p) '_) (= (car p) '*)) (contains refs (car p)))))
+      (match-array-build-let-pattern current refs xs (inc i) (cdr p)) ;; skip
+      (match-array-build-let-pattern 
         (cons
           (car p) (cons (list 'copy (list 'Array.nth xs i))
           current))

@@ -223,6 +223,14 @@
       true
       (contains (cdr xs) e))))
 
+
+(defdynamic contains-symbol? [xs e]
+  (if (= (count xs) 0)
+    false
+    (if (and (symbol? (car xs)) (= (car xs) e))
+      true
+      (contains-symbol? (cdr xs) e))))
+
 (defdynamic contains-recursive [xs e]
   (if (not (list? xs))
     (= xs e)
