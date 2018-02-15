@@ -11,6 +11,28 @@ import Types
 import Repl
 import StartingEnv
 import Eval
+import Util
+
+defaultProject :: Project
+defaultProject =
+  Project { projectTitle = "Untitled"
+          , projectIncludes = [SystemInclude "core.h"]
+          , projectCFlags = [""]
+          , projectLibFlags = [""]
+          , projectFiles = []
+          , projectEchoC = False
+          , projectCarpDir = "./"
+          , projectOutDir = "./out/"
+          , projectPrompt = case platform of
+                              MacOS -> "鲮 "
+                              _     -> "> "
+          , projectCarpSearchPaths = []
+          , projectPrintTypedAST = False
+          , projectCompiler = case platform of
+                                Windows -> "cl.exe -lm"
+                                _ ->       "clang -fPIC -lm"
+          , projectEchoCompilationCommand = False
+          }
 
 
 main :: IO ()
@@ -20,8 +42,7 @@ main = do args <- SystemEnvironment.getArgs
               logMemory = LogMemory `elem` otherOptions
               noCore = NoCore `elem` otherOptions
               optimize = Optimize `elem` otherOptions
-              projectWithFiles = defaultProject { projectFiles = argFilesToLoad
-                                                , projectCFlags = (if logMemory then ["-D LOG_MEMORY"] else []) ++
+              projectWithFiles = defaultProject { projectCFlags = (if logMemory then ["-D LOG_MEMORY"] else []) ++
                                                                   (if optimize then ["-O3 -D OPTIMIZE"] else []) ++
                                                                   (projectCFlags defaultProject)
                                                 , projectIncludes = if noCore then [] else projectIncludes defaultProject
@@ -46,9 +67,9 @@ main = do args <- SystemEnvironment.getArgs
                        putStrLn "This is free software with ABSOLUTELY NO WARRANTY."
                        putStrLn "Evaluate (help) for more information."
                        runInputT settings (repl context' "")
-            Build -> do _ <- executeString context' ":b" "Compiler (Build)"
+            Build -> do _ <- executeString True context' ":b" "Compiler (Build)"
                         return ()
-            BuildAndRun -> do _ <- executeString context' ":bx" "Compiler (Build & Run)"
+            BuildAndRun -> do _ <- executeString True context' ":bx" "Compiler (Build & Run)"
                               -- TODO: Handle the return value from executeString and return that one to the shell
                               return ()
 

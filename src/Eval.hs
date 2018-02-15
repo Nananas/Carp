@@ -216,12 +216,18 @@ eval env xobj =
         f:args -> do evaledF <- eval env f
                      case evaledF of
                        Right (XObj (Lst [XObj Dynamic _ _, _, XObj (Arr params) _ _, body]) _ _) ->
-                         do evaledArgs <- fmap sequence (mapM (eval env) args)
-                            case evaledArgs of
-                              Right okArgs -> apply env body params okArgs
-                              Left err -> return (Left err)
+                         case checkMatchingNrOfArgs f params args of
+                           Left err -> return (Left err)
+                           Right () ->
+                             do evaledArgs <- fmap sequence (mapM (eval env) args)
+                                case evaledArgs of
+                                  Right okArgs -> apply env body params okArgs
+                                  Left err -> return (Left err)
+
                        Right (XObj (Lst [XObj Macro _ _, _, XObj (Arr params) _ _, body]) _ _) ->
-                         apply env body params args
+                         case checkMatchingNrOfArgs f params args of
+                           Left err -> return (Left err)
+                           Right () -> apply env body params args
 
                        Right (XObj (Lst [XObj (Command callback) _ _, _]) _ _) ->
                          do evaledArgs <- fmap sequence (mapM (eval env) args)
@@ -250,6 +256,22 @@ eval env xobj =
          return $ do okXObjs <- evaledXObjs
                      Right (XObj (Arr okXObjs) i t)
     evalArray _ = error "Can't eval non-array in evalArray."
+
+-- | Make sure the arg list is the same length as the parameter list
+checkMatchingNrOfArgs :: XObj -> [XObj] -> [XObj] -> Either EvalError ()
+checkMatchingNrOfArgs xobj params args =
+  let usesRestArgs = not (null (filter isRestArgSeparator (map getName params)))
+      paramLen = if usesRestArgs then length params - 2 else length params
+      argsLen = length args
+      expected =
+        if usesRestArgs
+        then "at least " ++ show paramLen
+        else show paramLen
+  in  if (usesRestArgs && argsLen > paramLen) || (paramLen == argsLen)
+      then Right ()
+      else Left (EvalError ("Wrong nr of arguments in call to '" ++ pretty xobj ++ "' at " ++ prettyInfoFromXObj xobj ++
+                            ", expected " ++ expected ++ " but got " ++ show argsLen ++ "."
+                           ))
 
 -- | Apply a function to some arguments. The other half of 'eval'.
 apply :: Env -> XObj -> [XObj] -> [XObj] -> StateT Context IO (Either EvalError XObj)
@@ -295,8 +317,8 @@ data ReplCommand = ReplMacroError String
                  | ListOfCallbacks [CommandCallback]
 
 -- | Parses a string and then converts the resulting forms to commands, which are evaluated in order.
-executeString :: Context -> String -> String -> IO Context
-executeString ctx input fileName = catch exec (catcher ctx)
+executeString :: Bool -> Context -> String -> String -> IO Context
+executeString doCatch ctx input fileName = if doCatch then catch exec (catcher ctx) else exec
   where exec = case parse input fileName of
                  Left parseError -> executeCommand ctx (ReplParseError (show parseError))
                  Right xobjs -> foldM folder ctx xobjs
@@ -319,7 +341,6 @@ executeCommand ctx@(Context env typeEnv pathStrings proj lastInput execMode) cmd
               Left e ->
                 do putStrLnWithColor Red (show e)
                    throw CancelEvaluationException
-                   return newCtx
               Right (XObj (Lst []) _ _) ->
                 -- Nil result won't print
                 do return newCtx
@@ -391,7 +412,7 @@ catcher ctx exception =
     CancelEvaluationException ->
       stop 1
     EvalException evalError ->
-      do putStrLnWithColor Red (show evalError)
+      do putStrLnWithColor Red ("[EVAL ERROR] " ++ show evalError)
          stop 1
   where stop returnCode =
           case contextExecMode ctx of
@@ -402,22 +423,33 @@ catcher ctx exception =
 -- | Sort different kinds of definitions into the globalEnv or the typeEnv.
 define :: Context -> XObj -> IO Context
 define ctx@(Context globalEnv typeEnv _ proj _ _) annXObj =
-  case annXObj of
-    XObj (Lst (XObj (Defalias _) _ _ : _)) _ _ ->
-      --putStrLnWithColor Yellow (show (getPath annXObj) ++ " : " ++ show annXObj)
-      return (ctx { contextTypeEnv = TypeEnv (envInsertAt (getTypeEnv typeEnv) (getPath annXObj) annXObj) })
-    XObj (Lst (XObj (Typ _) _ _ : _)) _ _ ->
-      return (ctx { contextTypeEnv = TypeEnv (envInsertAt (getTypeEnv typeEnv) (getPath annXObj) annXObj) })
-    _ ->
-      do --putStrLnWithColor Blue (show (getPath annXObj) ++ " : " ++ showMaybeTy (ty annXObj))
-         when (projectEchoC proj) $
-           putStrLn (toC All annXObj)
-         case registerDefnOrDefInInterfaceIfNeeded ctx annXObj of
-           Left err ->
-             do putStrLnWithColor Red err
-                return ctx
-           Right ctx' ->
-             return (ctx' { contextGlobalEnv = envInsertAt globalEnv (getPath annXObj) annXObj })
+  let previousType =
+        case lookupInEnv (getPath annXObj) globalEnv of
+          Just (_, Binder found) -> ty found
+          Nothing -> Nothing
+  in case annXObj of
+       XObj (Lst (XObj (Defalias _) _ _ : _)) _ _ ->
+         --putStrLnWithColor Yellow (show (getPath annXObj) ++ " : " ++ show annXObj)
+         return (ctx { contextTypeEnv = TypeEnv (envInsertAt (getTypeEnv typeEnv) (getPath annXObj) annXObj) })
+       XObj (Lst (XObj (Typ _) _ _ : _)) _ _ ->
+         return (ctx { contextTypeEnv = TypeEnv (envInsertAt (getTypeEnv typeEnv) (getPath annXObj) annXObj) })
+       _ ->
+         do --putStrLnWithColor Blue (show (getPath annXObj) ++ " : " ++ showMaybeTy (ty annXObj))
+            when (projectEchoC proj) $
+              putStrLn (toC All annXObj)
+            case previousType of
+              Just previousTypeUnwrapped ->
+                when (not (areUnifiable (forceTy annXObj) previousTypeUnwrapped)) $
+                  do putStrWithColor Blue ("[WARNING] Definition at " ++ prettyInfoFromXObj annXObj ++ " changed type of '" ++ show (getPath annXObj) ++
+                                           "' from " ++ show previousTypeUnwrapped ++ " to " ++ show (forceTy annXObj))
+                     putStrLnWithColor White "" -- To restore color for sure.
+              Nothing -> return ()
+            case registerDefnOrDefInInterfaceIfNeeded ctx annXObj of
+              Left err ->
+                do putStrLnWithColor Red err
+                   return ctx
+              Right ctx' ->
+                return (ctx' { contextGlobalEnv = envInsertAt globalEnv (getPath annXObj) annXObj })
 
 -- | Ensure that a 'def' / 'defn' has registered with an interface (if they share the same name).
 registerDefnOrDefInInterfaceIfNeeded :: Context -> XObj -> Either String Context
@@ -643,7 +675,7 @@ specialCommandInfo target@(XObj (Sym path@(SymPath _ name) _) _ _) =
      let env = contextGlobalEnv ctx
          typeEnv = contextTypeEnv ctx
          proj = contextProj ctx
-         printer allowLookupInALL binderPair =
+         printer allowLookupInALL binderPair itIsAnErrorNotToFindIt =
            case binderPair of
              Just (_, binder@(Binder x@(XObj _ (Just i) _))) ->
                do putStrLnWithColor White (show binder ++ "\nDefined at " ++ prettyInfo i)
@@ -657,7 +689,8 @@ specialCommandInfo target@(XObj (Sym path@(SymPath _ name) _) _ _) =
                if allowLookupInALL
                then case multiLookupALL name env of
                       [] ->
-                        do putStrLnWithColor Red ("Can't find '" ++ show path ++ "'")
+                        do when itIsAnErrorNotToFindIt $
+                             putStrLnWithColor Red ("Can't find '" ++ show path ++ "'")
                            return ()
                       binders ->
                         do mapM_ (\(env, binder@(Binder (XObj _ i _))) ->
@@ -671,14 +704,14 @@ specialCommandInfo target@(XObj (Sym path@(SymPath _ name) _) _ _) =
        SymPath [] _ ->
          -- First look in the type env, then in the global env:
          do case lookupInEnv path (getTypeEnv typeEnv) of
-              Nothing -> liftIO (printer True (lookupInEnv path env))
-              found -> do liftIO (printer True found) -- this will print the interface itself
-                          liftIO (printer True (lookupInEnv path env)) -- this will print the locations of the implementers of the interface
+              Nothing -> liftIO (printer True (lookupInEnv path env) True)
+              found -> do liftIO (printer True found True) -- this will print the interface itself
+                          liftIO (printer True (lookupInEnv path env) False) -- this will print the locations of the implementers of the interface
             return dynamicNil
        qualifiedPath ->
          do case lookupInEnv path env of
               Nothing -> notFound path
-              found -> do liftIO (printer False found)
+              found -> do liftIO (printer False found True)
                           return dynamicNil
 
 specialCommandType :: XObj -> StateT Context IO (Either EvalError XObj)
@@ -765,9 +798,9 @@ commandLoad [XObj (Str path) _ _] =
             let files = projectFiles proj
                 files' = if firstPathFound `elem` files
                          then files
-                         else firstPathFound : files
+                         else files ++ [firstPathFound]
                 proj' = proj { projectFiles = files' }
-            newCtx <- liftIO $ executeString (ctx { contextProj = proj' }) contents firstPathFound
+            newCtx <- liftIO $ executeString True (ctx { contextProj = proj' }) contents firstPathFound
             put newCtx
             return dynamicNil
 
@@ -785,7 +818,7 @@ commandReload args =
      let paths = projectFiles (contextProj ctx)
          f :: Context -> FilePath -> IO Context
          f context filepath = do contents <- readFile filepath
-                                 executeString context contents filepath
+                                 executeString False context contents filepath
      newCtx <- liftIO (foldM f ctx paths)
      put newCtx
      return dynamicNil

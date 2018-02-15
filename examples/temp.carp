@@ -1,9 +1,10 @@
-;;(project-set! "echoCompilationCommand" "true")
-(load "Debug.carp")
-(Debug.sanitize-addresses)
-(project-set! "printAST" "true")
+;;(Project.config "echo-compiler-cmd" true)
+;; (load "Debug.carp")
+;; (Debug.sanitize-addresses)
+;; (Project.config "print-ast" true)
 
-(definterface foo (Fn [Int] Int))
+;; (defmacro m [x y z]
+;;   y)
 
-(defn foo []
-  true)
+;; (defn f []
+;;   (m 1 2 3 4))

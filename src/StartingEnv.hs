@@ -12,6 +12,7 @@ import Commands
 import Parsing
 import Eval
 
+-- | These modules will be loaded in order before any other code is evaluated.
 coreModules :: String -> [String]
 coreModules carpDir = map (\s -> carpDir ++ "/core/" ++ s ++ ".carp") [ "Interfaces"
                                                                       , "Macros"
@@ -23,12 +24,13 @@ coreModules carpDir = map (\s -> carpDir ++ "/core/" ++ s ++ ".carp") [ "Interfa
                                                                       , "Float"
                                                                       , "Array"
                                                                       , "Char"
-                                                                      , "String"
                                                                       , "Bool"
+                                                                      , "String"
                                                                       , "IO"
                                                                       , "System"
                                                                       ]
 
+-- | The array module contains functions for working with the Array type.
 arrayModule :: Env
 arrayModule = Env { envBindings = bindings, envParent = Nothing, envModuleName = Just "Array", envUseModules = [], envMode = ExternalEnv }
   where bindings = Map.fromList [ templateNth
@@ -47,10 +49,12 @@ arrayModule = Env { envBindings = bindings, envParent = Nothing, envModuleName =
                                 , templateSort
                                 ]
 
+-- | The Pointer module contains functions for dealing with pointers.
 pointerModule :: Env
 pointerModule = Env { envBindings = bindings, envParent = Nothing, envModuleName = Just "Pointer", envUseModules = [], envMode = ExternalEnv }
   where bindings = Map.fromList [ templatePointerCopy ]
 
+-- | A template function for copying (= deref:ing) any pointer.
 templatePointerCopy :: (String, Binder)
 templatePointerCopy = defineTemplate
   (SymPath ["Pointer"] "copy")
@@ -61,14 +65,23 @@ templatePointerCopy = defineTemplate
                         ,"}"])
   (const [])
 
-dynamicStringModule :: Env
-dynamicStringModule = Env { envBindings = bindings, envParent = Nothing, envModuleName = Just "String", envUseModules = [], envMode = ExternalEnv }
-  where bindings = Map.fromList [ addCommand "char-at" 2 commandCharAt
-                                , addCommand "index-of" 2 commandIndexOf
-                                , addCommand "substring" 3 commandSubstring
-                                , addCommand "count" 1 commandStringCount
-                                ]
+-- | The System module contains functions for various OS related things like timing and process control.
+systemModule :: Env
+systemModule = Env { envBindings = bindings, envParent = Nothing, envModuleName = Just "System", envUseModules = [], envMode = ExternalEnv }
+  where bindings = Map.fromList [ templateExit ]
 
+-- | A template function for exiting.
+templateExit :: (String, Binder)
+templateExit = defineTemplate
+  (SymPath ["System"] "exit")
+  (FuncTy [IntTy] (VarTy "a"))
+  (toTemplate "$a $NAME (int code)")
+  (toTemplate $ unlines ["$DECL {"
+                        ,"    exit(code);"
+                        ,"}"])
+  (const [])
+
+-- | The dynamic module contains dynamic functions only available in the repl and during compilation.
 dynamicModule :: Env
 dynamicModule = Env { envBindings = bindings, envParent = Nothing, envModuleName = Just "Dynamic", envUseModules = [], envMode = ExternalEnv }
   where bindings = Map.fromList $
@@ -108,8 +121,26 @@ dynamicModule = Env { envBindings = bindings, envParent = Nothing, envModuleName
                     , addCommand "system-include" 1 commandAddSystemInclude
                     , addCommand "local-include" 1 commandAddLocalInclude
                     ]
-                    ++ [("String", Binder (XObj (Mod dynamicStringModule) Nothing Nothing))]
+                    ++ [("String", Binder (XObj (Mod dynamicStringModule) Nothing Nothing))
+                       ,("Project", Binder (XObj (Mod dynamicProjectModule) Nothing Nothing))
+                       ]
 
+-- | A submodule of the Dynamic module. Contains functions for working with strings in the repl or during compilation.
+dynamicStringModule :: Env
+dynamicStringModule = Env { envBindings = bindings, envParent = Nothing, envModuleName = Just "String", envUseModules = [], envMode = ExternalEnv }
+  where bindings = Map.fromList [ addCommand "char-at" 2 commandCharAt
+                                , addCommand "index-of" 2 commandIndexOf
+                                , addCommand "substring" 3 commandSubstring
+                                , addCommand "count" 1 commandStringCount
+                                ]
+
+-- | A submodule of the Dynamic module. Contains functions for working with the active Carp project.
+dynamicProjectModule :: Env
+dynamicProjectModule = Env { envBindings = bindings, envParent = Nothing, envModuleName = Just "Project", envUseModules = [], envMode = ExternalEnv }
+  where bindings = Map.fromList [ addCommand "config" 2 commandProjectConfig
+                                ]
+
+-- | The global environment before any code is run.
 startingGlobalEnv :: Bool -> Env
 startingGlobalEnv noArray =
   Env { envBindings = bindings,
@@ -125,9 +156,10 @@ startingGlobalEnv noArray =
                                   ]
                    ++ (if noArray then [] else [("Array", Binder (XObj (Mod arrayModule) Nothing Nothing))])
                    ++ [("Pointer", Binder (XObj (Mod pointerModule) Nothing Nothing))]
+                   ++ [("System", Binder (XObj (Mod systemModule) Nothing Nothing))]
                    ++ [("Dynamic", Binder (XObj (Mod dynamicModule) Nothing Nothing))]
 
-
+-- | The type environment (containing deftypes and interfaces) before any code is run.
 startingTypeEnv :: Env
 startingTypeEnv = Env { envBindings = bindings
                       , envParent = Nothing
@@ -138,7 +170,7 @@ startingTypeEnv = Env { envBindings = bindings
   where bindings = Map.fromList
           $ [ interfaceBinder "copy" (FuncTy [(RefTy (VarTy "a"))] (VarTy "a")) [SymPath ["Array"] "copy", SymPath ["Pointer"] "copy"] builtInSymbolInfo
             , interfaceBinder "str" (FuncTy [(VarTy "a")] StringTy) [SymPath ["Array"] "str"] builtInSymbolInfo
-              -- TODO: Implement! ("=", Binder (defineInterface "=" (FuncTy [(VarTy "a"), (VarTy "a")] BoolTy)))
+            , interfaceBinder "prn" (FuncTy [(VarTy "a")] StringTy) [] builtInSymbolInfo
             ]
         builtInSymbolInfo = Info (-1) (-1) "Built-in." Set.empty (-1)
 

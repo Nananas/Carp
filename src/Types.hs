@@ -40,6 +40,11 @@ data Ty = IntTy
         | InterfaceTy
         deriving (Eq, Ord)
 
+fnOrLambda = 
+  case platform of
+    Windows -> "Fn"
+    _ -> "λ"
+
 instance Show Ty where
   show IntTy                 = "Int"
   show FloatTy               = "Float"
@@ -48,7 +53,7 @@ instance Show Ty where
   show BoolTy                = "Bool"
   show StringTy              = "String"
   show CharTy                = "Char"
-  show (FuncTy argTys retTy) = "(λ [" ++ joinWithComma (map show argTys) ++ "] " ++ show retTy ++ ")"
+  show (FuncTy argTys retTy) = "(" ++ fnOrLambda ++ " [" ++ joinWithComma (map show argTys) ++ "] " ++ show retTy ++ ")"
   show (VarTy t)             = t
   show UnitTy                = "()"
   show ModuleTy              = "Module"

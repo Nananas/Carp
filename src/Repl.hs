@@ -20,22 +20,6 @@ import ColorText
 import Eval
 import Parsing (balance)
 
-defaultProject :: Project
-defaultProject = Project { projectTitle = "Untitled"
-                         , projectIncludes = [SystemInclude "core.h"]
-                         , projectCFlags = [""]
-                         , projectLibFlags = [""]
-                         , projectFiles = []
-                         , projectEchoC = False
-                         , projectCarpDir = "./"
-                         , projectOutDir = "./out/"
-                         , projectPrompt = if os == "darwin" then "鲮 " else "> "
-                         , projectCarpSearchPaths = []
-                         , projectPrintTypedAST = False
-                         , projectCompiler = "clang -fPIC -lm"
-                         , projectEchoCompilationCommand = False
-                         }
-
 completeKeywords :: Monad m => String -> String -> m [Completion]
 completeKeywords _ word = return $ findKeywords word keywords []
   where
@@ -102,6 +86,6 @@ repl context readSoFar =
           let concat = readSoFar ++ i ++ "\n"
           case balance concat of
             0 -> do let input' = if concat == "\n" then contextLastInput context else concat
-                    context' <- liftIO $ executeString context input' "REPL"
+                    context' <- liftIO $ executeString True context input' "REPL"
                     repl (context' { contextLastInput = input' }) ""
             _ -> repl context concat
