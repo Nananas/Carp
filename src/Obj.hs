@@ -10,7 +10,11 @@ import Types
 import Util
 import Debug.Trace
 
-data SymbolMode = Symbol | LookupLocal | LookupGlobal deriving (Eq, Show)
+data SymbolMode = Symbol
+                | LookupLocal
+                | LookupGlobal
+                | LookupGlobalOverride String -- Used to emit another name than the one used in the Carp program.
+                deriving (Eq, Show)
 
 -- | The canonical Lisp object.
 data Obj = Sym SymPath SymbolMode
@@ -32,7 +36,7 @@ data Obj = Sym SymPath SymbolMode
          | Mod Env
          | Typ Ty
          | With
-         | External
+         | External (Maybe String)
          | ExternalType
          | Deftemplate TemplateCreator
          | Instantiate Template
@@ -103,6 +107,18 @@ prettyInfoFromXObj xobj = case info xobj of
                             Just i -> prettyInfo i
                             Nothing -> "no info"
 
+machineReadableInfo :: Info -> String
+machineReadableInfo i =
+  let line = infoLine i
+      column = infoColumn i
+      file = infoFile i
+  in  file ++ ":" ++ show line ++ ":" ++ show column
+
+machineReadableInfoFromXObj :: XObj -> String
+machineReadableInfoFromXObj xobj = case info xobj of
+                                     Just i -> machineReadableInfo i
+                                     Nothing -> ""
+
 -- TODO: change name of this function
 freshVar :: Info -> String
 freshVar i = "_" ++ show (infoIdentifier i)
@@ -122,7 +138,7 @@ getBinderDescription (XObj (Lst (XObj (Command _) _ _ : XObj (Sym _ _) _ _ : _))
 getBinderDescription (XObj (Lst (XObj (Deftemplate _) _ _ : XObj (Sym _ _) _ _ : _)) _ _) = "template"
 getBinderDescription (XObj (Lst (XObj (Instantiate _) _ _ : XObj (Sym _ _) _ _ : _)) _ _) = "instantiate"
 getBinderDescription (XObj (Lst (XObj (Defalias _) _ _ : XObj (Sym _ _) _ _ : _)) _ _) = "alias"
-getBinderDescription (XObj (Lst (XObj External _ _ : XObj (Sym _ _) _ _ : _)) _ _) = "external"
+getBinderDescription (XObj (Lst (XObj (External _) _ _ : XObj (Sym _ _) _ _ : _)) _ _) = "external"
 getBinderDescription (XObj (Lst (XObj ExternalType _ _ : XObj (Sym _ _) _ _ : _)) _ _) = "external-type"
 getBinderDescription (XObj (Lst (XObj (Typ _) _ _ : XObj (Sym _ _) _ _ : _)) _ _) = "deftype"
 getBinderDescription (XObj (Lst (XObj (Interface _ _) _ _ : XObj (Sym _ _) _ _ : _)) _ _) = "interface"
@@ -139,7 +155,7 @@ getPath (XObj (Lst (XObj Macro _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
 getPath (XObj (Lst (XObj (Deftemplate _) _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
 getPath (XObj (Lst (XObj (Instantiate _) _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
 getPath (XObj (Lst (XObj (Defalias _) _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
-getPath (XObj (Lst (XObj External _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
+getPath (XObj (Lst (XObj (External _) _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
 getPath (XObj (Lst (XObj ExternalType _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
 getPath (XObj (Lst (XObj (Typ _) _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
 getPath (XObj (Lst (XObj (Mod _) _ _ : XObj (Sym path _) _ _ : _)) _ _) = path
@@ -152,7 +168,7 @@ getPath x = SymPath [] (pretty x)
 setPath :: XObj -> SymPath -> XObj
 setPath (XObj (Lst (defn@(XObj Defn _ _) : XObj (Sym _ _) si st : rest)) i t) newPath =
   XObj (Lst (defn : XObj (Sym newPath Symbol) si st : rest)) i t
-setPath (XObj (Lst [extr@(XObj External _ _), XObj (Sym _ _) si st]) i t) newPath =
+setPath (XObj (Lst [extr@(XObj (External _) _ _), XObj (Sym _ _) si st]) i t) newPath =
   XObj (Lst [extr, XObj (Sym newPath Symbol) si st]) i t
 setPath x _ =
   error ("Can't set path on " ++ show x)
@@ -174,7 +190,7 @@ pretty = visit 0
             Chr c -> '\\' : c : ""
             Sym path _ -> show path
             MultiSym originalName paths -> originalName ++ "{" ++ joinWithComma (map show paths) ++ "}"
-            InterfaceSym name -> "(InterfaceSym " ++ name ++ ")"
+            InterfaceSym name -> name
             Bol b -> if b then "true" else "false"
             Defn -> "defn"
             Def -> "def"
@@ -186,7 +202,8 @@ pretty = visit 0
             Typ _ -> "deftype"
             Deftemplate _ -> "deftemplate"
             Instantiate _ -> "instantiate"
-            External -> "external"
+            External Nothing -> "external"
+            External (Just override) -> "external (override: " ++ show override ++ ")"
             ExternalType -> "external-type"
             Defalias _ -> "defalias"
             Address -> "address"
@@ -289,7 +306,7 @@ tyToXObj x = XObj (Sym (SymPath [] (show x)) Symbol) Nothing Nothing
 
 -- | Helper function to create binding pairs for registering external functions.
 register :: String -> Ty -> (String, Binder)
-register name t = (name, Binder (XObj (Lst [XObj External Nothing Nothing,
+register name t = (name, Binder (XObj (Lst [XObj (External Nothing) Nothing Nothing,
                                             XObj (Sym (SymPath [] name) Symbol) Nothing Nothing])
                                  (Just dummyInfo) (Just t)))
 
@@ -526,7 +543,7 @@ forceTy :: XObj -> Ty
 forceTy xobj = fromMaybe (error ("No type in " ++ show xobj)) (ty xobj)
 
 -- | How should the compiler be run? Interactively or just build / build & run and then quit?
-data ExecutionMode = Repl | Build | BuildAndRun deriving (Show, Eq)
+data ExecutionMode = Repl | Build | BuildAndRun | Check deriving (Show, Eq)
 
 -- | Information needed by the REPL
 data Context = Context { contextGlobalEnv :: Env

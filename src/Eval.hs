@@ -7,7 +7,7 @@ import Data.Maybe (fromJust, mapMaybe, isJust)
 import Control.Monad.State
 import Control.Monad.State.Lazy (StateT(..), runStateT, liftIO, modify, get, put)
 import System.Exit (exitSuccess, exitFailure, exitWith, ExitCode(..))
-import System.IO (hPutStr)
+import qualified System.IO as SysIO
 import System.Directory (doesPathExist)
 import Control.Concurrent (forkIO)
 import qualified Data.Map as Map
@@ -29,6 +29,7 @@ import Commands
 import Expand
 import Lookup
 import Qualify
+import TypeError
 
 -- | Dynamic (REPL) evaluation of XObj:s (s-expressions)
 eval :: Env -> XObj -> StateT Context IO (Either EvalError XObj)
@@ -105,9 +106,9 @@ eval env xobj =
                                          XObj (Bol bb) _ _ ->
                                            if bb then Right trueXObj else Right falseXObj
                                          _ ->
-                                           Left (EvalError ("Can't perform logical operation (and) on " ++ pretty okB))
+                                           Left (EvalError ("Can't perform logical operation (or) on " ++ pretty okB))
                            _ ->
-                             Left (EvalError ("Can't perform logical operation (and) on " ++ pretty okA))
+                             Left (EvalError ("Can't perform logical operation (or) on " ++ pretty okA))
 
         [XObj (Sym (SymPath [] "not") _) _ _, a] ->
           do evaledA <- eval env a
@@ -169,7 +170,9 @@ eval env xobj =
           specialCommandDeftype nameXObj rest
 
         [XObj (Sym (SymPath [] "register") _) _ _, XObj (Sym (SymPath _ name) _) _ _, typeXObj] ->
-          specialCommandRegister name typeXObj
+          specialCommandRegister name typeXObj Nothing
+        [XObj (Sym (SymPath [] "register") _) _ _, XObj (Sym (SymPath _ name) _) _ _, typeXObj, XObj (Str overrideName) _ _] ->
+          specialCommandRegister name typeXObj (Just overrideName)
         XObj (Sym (SymPath [] "register") _) _ _ : _ ->
           return (Left (EvalError ("Invalid args to 'register' command: " ++ pretty xobj)))
 
@@ -339,8 +342,13 @@ executeCommand ctx@(Context env typeEnv pathStrings proj lastInput execMode) cmd
          do (result, newCtx) <- runStateT (eval env xobj) ctx
             case result of
               Left e ->
-                do putStrLnWithColor Red (show e)
-                   throw CancelEvaluationException
+                case contextExecMode ctx of
+                  Check ->
+                    do putStrLn (show e)
+                       return ctx
+                  _ ->
+                    do putStrLnWithColor Red (show e)
+                       throw CancelEvaluationException
               Right (XObj (Lst []) _ _) ->
                 -- Nil result won't print
                 do return newCtx
@@ -419,6 +427,7 @@ catcher ctx exception =
             Repl -> return ctx
             Build -> exitWith (ExitFailure returnCode)
             BuildAndRun -> exitWith (ExitFailure returnCode)
+            Check -> exitWith ExitSuccess
 
 -- | Sort different kinds of definitions into the globalEnv or the typeEnv.
 define :: Context -> XObj -> IO Context
@@ -500,7 +509,11 @@ specialCommandDefine xobj =
              xobjFullSymbols = setFullyQualifiedSymbols typeEnv innerEnv xobjFullPath
          in case annotate typeEnv env xobjFullSymbols of
               Left err ->
-                return (Left (EvalError (show err)))
+                case contextExecMode ctx of
+                  Check ->
+                    return (Left (EvalError (joinWith "\n" (machineReadableErrorStrings err))))
+                  _ ->
+                    return (Left (EvalError (show err)))
               Right annXObjs ->
                 do ctxWithDefs <- liftIO $ foldM define ctxAfterExpansion annXObjs
                    put ctxWithDefs
@@ -575,14 +588,14 @@ deftypeInternal nameXObj typeName typeVariableXObjs rest =
        _ ->
          return (Left (EvalError ("Invalid name for type definition: " ++ pretty nameXObj)))
 
-specialCommandRegister :: String -> XObj -> StateT Context IO (Either EvalError XObj)
-specialCommandRegister name typeXObj =
+specialCommandRegister :: String -> XObj -> Maybe String -> StateT Context IO (Either EvalError XObj)
+specialCommandRegister name typeXObj overrideName =
   do ctx <- get
      let pathStrings = contextPath ctx
          env = contextGlobalEnv ctx
      case xobjToTy typeXObj of
            Just t -> let path = SymPath pathStrings name
-                         binding = XObj (Lst [XObj External Nothing Nothing,
+                         binding = XObj (Lst [XObj (External overrideName) Nothing Nothing,
                                               XObj (Sym path Symbol) Nothing Nothing])
                                    (info typeXObj) (Just t)
                          env' = envInsertAt env path binding
@@ -794,7 +807,9 @@ commandLoad [XObj (Str path) _ _] =
                      return dynamicNil
        firstPathFound : _ ->
          do contents <- liftIO $ do --putStrLn ("Will load '" ++ firstPathFound ++ "'")
-                                    readFile firstPathFound
+                                    handle <- SysIO.openFile firstPathFound SysIO.ReadMode
+                                    SysIO.hSetEncoding handle SysIO.utf8
+                                    SysIO.hGetContents handle
             let files = projectFiles proj
                 files' = if firstPathFound `elem` files
                          then files
