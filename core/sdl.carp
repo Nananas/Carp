@@ -79,6 +79,7 @@
 (register SDLK_RIGHT SDL_Keycode)
 (register SDLK_UP SDL_Keycode)
 (register SDLK_DOWN SDL_Keycode)
+(register SDLK_r SDL_Keycode)
 
 (defmodule Keycode
   (register = (Fn [SDL_Keycode SDL_Keycode] Bool))

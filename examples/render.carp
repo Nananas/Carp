@@ -2,14 +2,58 @@
 (def TS 4)
 (def CS 12)
 (def SCALE 4)
-(def App-width 800)
-(def App-height 600)
-(def half-width (/ 400 SCALE))
-(def half-height (/ 300 SCALE))
 
+(defn render-grid [cx cy renderer]
+  (do
+    (SDL_SetRenderDrawColor renderer 100 100 100 255)
+    (for [x (* CS SCALE) 1000 (* CS SCALE)]
+      (SDL_RenderDrawLine renderer (+ (* -1 cx) x) 0 (+ (* -1 cx) x) App-height))
+    (for [y (* CS SCALE) 1000 (* CS SCALE)]
+      (SDL_RenderDrawLine renderer 0 (+ (* -1 cy) y) App-width (+ (* -1 cy) y)))))
+    
+(defmacro render-box [x y w h]
+  (list 'SDL_RenderFillRect 'renderer (list 'address
+      (list 'make-rect
+        x y w h))))
+
+
+(defn render-button [renderer b]
+  (with Button
+    (do
+      (if @(down b)
+        (SDL_SetRenderDrawColor renderer 150 150 150 255)
+        (SDL_SetRenderDrawColor renderer 200 200 200 255))
+      (render-box @(x b) @(y b) @(w b) @(h b)))))
+
+(defn render-UI [renderer buttons]
+  (do
+    (SDL_SetRenderDrawColor renderer 50 50 50 255)
+    (SDL_RenderFillRect renderer (address
+      (make-rect
+        0
+        Half-height
+        App-width
+        App-height)))
+    (with Button
+      (for [i 0 (count buttons)]
+        (let [b (nth buttons i)]
+          (render-button renderer b))))))
+
+
+
+(defn render-player [x y renderer cx cy]
+  (do 
+    (SDL_SetRenderDrawColor renderer 40 200 60 255)
+    (SDL_RenderFillRect renderer (address
+      (make-rect
+        (- (* (* x TS) SCALE) cx)
+        (- (* (* y TS) SCALE) cy)
+        (* TS SCALE)
+        (* TS SCALE))))))
+  
 (defn render-cell [cell xx yy renderer cx cy]
   (do
-    (for (i 0 (count cell))
+    (for [i 0 (count cell)]
       (let [x (mod i 3)
             y (/ i 3)]
             (do 

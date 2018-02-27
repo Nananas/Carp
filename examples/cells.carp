@@ -7,28 +7,77 @@
 (defmacro ++ [:rest strs]
   (string-join- strs))
 
+; (system-include "bench.h")
+
+; (local-include "raw.h")
+(add-cflag "-O3")
 
 (load "sdl.carp")
 (load "sdl_image.carp")
 (load "match.carp")
-(load "render.carp")
+
+(def App-width 400)
+(def App-height 700)
+(def Half-width 200)
+(def Half-height 350)
+
+
 (load "state.carp")
+(load "render.carp")
 (load "mapgen.carp")
+
+(register get-time-elapsed (Fn [] Double))
 
 (defn main []
   (do
     (seed (time))
-    (let-do [app (app-init @"Cells" 800 600)
+    (let-do [app (app-init @"Cells" App-width App-height)
             rend (app-renderer app)
             cells (filter validcell (genallcells))
-            start-cell (Cell.init @(pick-random &cells) (Pos.init half-width half-height))
+            start-cell (Cell.init [0 0 0 0 0 0 0 1 0] (Pos.init 0 0))
             state (state-new
                     (dig &cells 100 LEFT [@&start-cell]))
+            dimentions (get-dimentions (State.data &state))
             ; texture (IMG_LoadTexture rend (cstr "./resources/tree.png"))
+            ; grid (replicate @(Dim.x &dimentions) &(replicate @(Dim.y &dimentions) &0))
+            ; grid (replicate (* @(Dim.x &dimentions) @(Dim.y &dimentions)) &0)
             ]
+      ; (blit-to-grid (State.data &state) &grid)
+      ; (let [a (get-time-elapsed)
+      ;       _ (for [i 0 1000] 
+      ;           (let [_ (get-dimentions-2 (State.data &state)) ]()))
+      ;       b (get-time-elapsed)]
+      ;   (println &(str (- b a))))
+
+      ; (let [a (get-time-elapsed)
+      ;       _ (for [i 0 1000] 
+      ;           (let [_ (get-dimentions (State.data &state)) ]()))
+      ;       b (get-time-elapsed)]
+      ;   (println &(str (- b a))))
+
+      ; (println &(str &(get-dimentions-2 (State.data &state))))
+      ; (println &(str &(get-dimentions (State.data &state))))
       (while true
         (do
+
           (handle-events &app rend &state)
+          (when @(State.mousedown &state) 
+            (do
+              (State.set-mousedown! &state false)
+              (println &(fmt "MOUSE DOWN AT %i %i" @(State.mx &state) @(State.my &state)))
+              
+              (let [mx @(State.mx &state)
+                    my @(State.my &state)]
+                (for [i 0 (count (State.buttons &state))]
+                  (let [b (nth (State.buttons &state) i)]
+                    (with Button
+                      (if (and* 
+                            (> mx @(x b))
+                            (> my @(y b))
+                            (< mx (+ @(x b) @(w b)))
+                            (< my (+ @(y b) @(h b))))
+                        (println &(str @(id b)))
+                        ())))))))
           (update-state &state)
 
           (when (= (count (State.data &state)) 0)
@@ -46,6 +95,17 @@
                 rend
                 @(State.cx &state)
                 @(State.cy &state))))
+
+          (render-player 
+            @(=> (State.player &state) (Player.x)) 
+            @(=> (State.player &state) (Player.y))
+            rend
+            @(State.cx &state)
+            @(State.cy &state))
+          ; (render-grid @(State.cx &state) @(State.cy &state) rend)
+
+          (render-UI rend (State.buttons &state))
+
 
           ; (SDL_RenderCopy rend texture (address (make-rect 0 0 100 100)) (address (make-rect 100 100 100 100)))
           (SDL_RenderPresent rend)
