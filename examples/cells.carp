@@ -48,12 +48,13 @@
             tunnel (dig &cells 50 LEFT [@&start-cell])
 
             grid (blit-to-grid &tunnel)
+            player-pos (get-start-pos &tunnel)
             ; (>> dw dh << )
             ; grid (blit-to-grid tunnel dw dh)
             ; _ (println &(str &grid))
-            _ (print-grid &grid)
-
-            state (state-new @&tunnel)
+            ; _ (print-grid &grid)
+            _ (println &(str &player-pos))
+            state (state-new grid @(Pos.x &player-pos) @(Pos.y &player-pos))
             ; texture (IMG_LoadTexture rend (cstr "./resources/tree.png"))
             ; grid (replicate @(Dim.x &dimentions) &(replicate @(Dim.y &dimentions) &0))
             ; grid (replicate (* @(Dim.x &dimentions) @(Dim.y &dimentions)) &0)
@@ -90,21 +91,26 @@
           (update-state &state)
 
           (when (= (count (State.data &state)) 0)
-            (State.set-data! &state (dig &cells 100 LEFT [@&start-cell])))
+            ; (do
+              ; (State.set-data! &state (blit-to-grid &(dig &cells 100 LEFT [@&start-cell])))
+            (let [tunnel (dig &cells 100 LEFT [@&start-cell])
+                  player-pos (get-start-pos &tunnel)]
+              (set! state (state-new (blit-to-grid &tunnel) @(Pos.x &player-pos) @(Pos.y &player-pos)))))
 
           (SDL_SetRenderDrawBlendMode rend SDL_BLENDMODE_BLEND)
           (SDL_SetRenderDrawColor rend 0 0 0 0)
           (SDL_RenderClear rend)
 
-          (for [i 0 (count (State.data &state))]
-            (let [n (nth (State.data &state) i)]
-              (render-cell n
-                ; (Cell.data n)
-                ; @(Pos.x (Cell.pos n))
-                ; @(Pos.y (Cell.pos n))
-                rend
-                @(State.cx &state)
-                @(State.cy &state))))
+          (render-map (State.data &state) @(State.cx &state) @(State.cy &state) rend)
+          ; (for [i 0 (count (State.data &state))]
+          ;   (let [n (nth (State.data &state) i)]
+          ;     (render-cell n
+          ;       ; (Cell.data n)
+          ;       ; @(Pos.x (Cell.pos n))
+          ;       ; @(Pos.y (Cell.pos n))
+          ;       rend
+          ;       @(State.cx &state)
+          ;       @(State.cy &state))))
 
           (render-player 
             @(=> (State.player &state) (Player.x)) 

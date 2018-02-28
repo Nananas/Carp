@@ -5,7 +5,7 @@
 (deftype Player [x Int y Int])
 (deftype Button [x Int y Int w Int h Int id Int down Bool active Bool])
 (deftype State 
-  [data (Array Cell)  ;; map
+  [data (Array (Array Int))  ;; map
    cx Int 
    cy Int
    kup Bool
@@ -44,8 +44,8 @@
 ;     (Button.set-down! button true)
 ;     (println "Button callback")))
 
-(defn state-new [data]
-  (State.init data -200 -150 false false false false 0 0 false (Player.init 1 1) 
+(defn state-new [data px py]
+  (State.init data -200 -150 false false false false 0 0 false (Player.init px py) 
     (let-do [bs []]
             (for [ix 0 4]
               (for [iy 0 3]

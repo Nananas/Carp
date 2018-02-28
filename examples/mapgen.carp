@@ -214,41 +214,40 @@
 ;       (set! w (max w @(=> (Cell.pos (nth tunnel i)) Pos.x)))
 ;       (set! h (max h @(=> (Cell.pos (nth tunnel i)) Pos.y))))))
 
+;; TODO: fix player position is now incorrect
 (defn blit-to-grid [tunnel]
   (let [dimentions (get-dimentions tunnel)
         dsx @(<1> &dimentions)
         dsy @(<2> &dimentions)
         dex @(<3> &dimentions)
         dey @(<4> &dimentions)
-        _ (println &(fmt "dsx %i" dsx))
-        _ (println &(fmt "dsy %i" dsy))
-        _ (println &(fmt "dex %i" dex))
-        _ (println &(fmt "dey %i" dey))
         w (- dex dsx)
         h (- dey dsy)
-        _ (println &(fmt "w %i" w))
-        _ (println &(fmt "h %i" h))
         grid (replicate h &(replicate w &0))]
     (do
       (for [ti 0 (count tunnel)]
-        (let-do [cell (nth tunnel ti)
-              _ (println &(fmt "cell y %i" @(=> (Cell.pos cell) (Pos.y))))
+        (let [cell (nth tunnel ti)
               xx (- (* @(=> (Cell.pos cell) (Pos.x)) 3) dsx)
               yy (- (* @(=> (Cell.pos cell) (Pos.y)) 3) dsy)]
-          (println &(fmt "xx %i" xx))
-          (println &(fmt "yy %i" yy))
           (for [ci 0 (count (Cell.data cell))]
             (let [cx (mod ci 3)
                   cy (/ ci 3)
                   x (+ xx cx)
                   y (+ yy cy)
                   row (nth &grid y)
-                  _ (println &(fmt "> x %i" x))
-                  _ (println &(fmt "> y %i" y))
                   value @(nth (Cell.data cell) ci)]
-                  ; _ (println &(str value))]
               (aset! row x (- 1 value))))))
       grid)))
+
+(defn get-start-pos [tunnel]
+  (let [dimentions (get-dimentions tunnel)
+        dsx @(<1> &dimentions)
+        dsy @(<2> &dimentions)
+        dex @(<3> &dimentions)
+        dey @(<4> &dimentions)]
+    (Pos.init 
+      (+ (- @(=> (nth tunnel 0) Cell.pos Pos.x) dsx) 1)
+      (+ (- @(=> (nth tunnel 0) Cell.pos Pos.y) dsy) 1))))
 
 (defn print-grid [grid]
   (for [y 0 (count grid)]

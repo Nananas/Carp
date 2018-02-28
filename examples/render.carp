@@ -11,6 +11,20 @@
     (for [y (* CS SCALE) 1000 (* CS SCALE)]
       (SDL_RenderDrawLine renderer 0 (+ (* -1 cy) y) App-width (+ (* -1 cy) y)))))
     
+(defn render-map [grid cx cy renderer]
+  (for [y 0 (count grid)]
+    (for [x 0 (count (nth grid 0))]
+      (do
+        (if (= @(nth (nth grid y) x) 1)
+          (SDL_SetRenderDrawColor renderer 255 255 255 255)
+          (SDL_SetRenderDrawColor renderer 0 0 0 255))
+        (SDL_RenderFillRect renderer (address
+          (make-rect
+            (- (* (* x TS) SCALE) cx)
+            (- (* (* y TS) SCALE) cy)
+            (* TS SCALE)
+            (* TS SCALE))))))))
+
 (defmacro render-box [x y w h]
   (list 'SDL_RenderFillRect 'renderer (list 'address
       (list 'make-rect
