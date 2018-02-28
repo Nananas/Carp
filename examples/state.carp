@@ -3,7 +3,7 @@
 (deftype Pos [x Int y Int])
 (deftype Cell [data (Array Int) pos Pos])
 (deftype Player [x Int y Int])
-(register-type Button [x Int y Int w Int h Int id Int down Bool cb-down (A []())])
+(deftype Button [x Int y Int w Int h Int id Int down Bool active Bool])
 (deftype State 
   [data (Array Cell)  ;; map
    cx Int 
@@ -17,12 +17,32 @@
    mousedown Bool
    player Player
    buttons (Array Button)])
-(deftype Dim [x Int y Int])
 
-(defn button-callback [button]
-  (do
-    (Button.set-down! button true)
-    (println "Button callback")))
+; (definterface <1> (λ [a] b))
+; (definterface <2> (λ [a] b))
+; (defmodule Tuple
+  ; (deftype (T2 a b) [one a two b])
+  ; (deftype (Tuple3 a b c) [one a two b three c])
+
+  ; (defn <1> [d]
+    ; @(Tuple.T2.one d))
+
+; )
+
+; (defmacro <> [:rest forms]
+;   (macro-log-return (if (= (count forms) 2)
+;     (list 'Tuple.T2.init (car forms) (cadr forms))
+;     (if (= (count forms) 3)
+;       (list 'Tuple.T2.init (car forms) (cadr forms) (caddr forms))
+;       ()))))
+
+
+
+
+; (defn button-callback [button]
+;   (do
+;     (Button.set-down! button true)
+;     (println "Button callback")))
 
 (defn state-new [data]
   (State.init data -200 -150 false false false false 0 0 false (Player.init 1 1) 
@@ -60,7 +80,9 @@
                     (set-kdown! state true))
 
                 SDLK_r (do
-                    (set-data! state []))
+                    (set-data! state [])
+                    (set-cx! state -200)
+                    (set-cy! state -150))
 
                 ())
 

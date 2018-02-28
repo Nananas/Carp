@@ -51,19 +51,23 @@
         (* TS SCALE)
         (* TS SCALE))))))
   
-(defn render-cell [cell xx yy renderer cx cy]
-  (do
-    (for [i 0 (count cell)]
-      (let [x (mod i 3)
-            y (/ i 3)]
-            (do 
-              (if (= @(nth cell i) 1)
-                (SDL_SetRenderDrawColor renderer 0 0 0 255)
-                (SDL_SetRenderDrawColor renderer 255 255 255 255))
-              (SDL_RenderFillRect renderer (address 
-                (make-rect 
-                  (- (* (+ xx (* x TS)) SCALE) cx)
-                  (- (* (+ yy (* y TS)) SCALE) cy)
-                  (* TS SCALE)
-                  (* TS SCALE)))))))))
+(defn render-cell [cell renderer cx cy]
+  (let [data (Cell.data cell)
+        pos (Cell.pos cell)]
+    (do
+      (for [i 0 (count data)]
+        (let [xx (* @(Pos.x pos) CS)
+              yy (* @(Pos.y pos) CS)
+              x (mod i 3)
+              y (/ i 3)]
+              (do 
+                (if (= @(nth data i) 1)
+                  (SDL_SetRenderDrawColor renderer 0 0 0 255)
+                  (SDL_SetRenderDrawColor renderer 255 255 255 255))
+                (SDL_RenderFillRect renderer (address 
+                  (make-rect 
+                    (- (* (+ xx (* x TS)) SCALE) cx)
+                    (- (* (+ yy (* y TS)) SCALE) cy)
+                    (* TS SCALE)
+                    (* TS SCALE))))))))))
 

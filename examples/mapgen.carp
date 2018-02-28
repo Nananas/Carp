@@ -100,10 +100,10 @@
   (let-do [new (Pos.init @(Pos.x pos) @(Pos.y pos))]
     (with Pos
       (case @dir
-        UP    (set-y! &new (- @(y pos) CS))
-        DOWN  (set-y! &new (+ @(y pos) CS))
-        LEFT  (set-x! &new (- @(x pos) CS))
-        RIGHT (set-x! &new (+ @(x pos) CS))
+        UP    (set-y! &new (dec @(y pos)))
+        DOWN  (set-y! &new (inc @(y pos)))
+        LEFT  (set-x! &new (dec @(x pos)))
+        RIGHT (set-x! &new (inc @(x pos)))
       ()))
     new))
 
@@ -172,53 +172,87 @@
         (update! nbr-digs-left dec)))
     tunnel))
 
+(deftype Tuple [one Int two Int three Int four Int])
+(defmacro <> [one two three four]
+  ; (do (macro-log a)
+  ; (macro-log b)
+  ; (macro-log c)
+  ; (macro-log d)
+  (list 'Tuple.init one two three four))
+(defmacro <1> [t]
+  (list 'Tuple.one t))
+(defmacro <2> [t]
+  (list 'Tuple.two t))
+(defmacro <3> [t]
+  (list 'Tuple.three t))
+(defmacro <4> [t]
+  (list 'Tuple.four t))
+
 (defn get-dimentions [tunnel]
-  (let [w 0
-        h 0]
+  (let [sx 0 sy 0 ex 0 ey 0]
     (do
       (for [c 0 (count tunnel)]
-        (do
-          (set! w (max w @(=> (Cell.pos (nth tunnel c)) Pos.x)))
-          (set! h (max h @(=> (Cell.pos (nth tunnel c)) Pos.y)))))
-      (Dim.init w h))))
+        (let-do [cell (nth tunnel c)]
+          ; (println &(str @(=> (Cell.pos cell) Pos.y)))
+          (set! sx (min sx @(=> (Cell.pos cell) Pos.x)))
+          (set! sy (min sy @(=> (Cell.pos cell) Pos.y)))
+          (set! ex (max ex @(=> (Cell.pos cell) Pos.x)))
+          (set! ey (max ey @(=> (Cell.pos cell) Pos.y)))))
+      (<> (* sx 3) (* sy 3) (+ (* ex 3) 3) (+ (* ey 3) 3)))))
 
-(defmacro map-reduce [init xs f]
-  (list 'let init
-    (list 'do
-      (list 'for (array 'i '0 (list 'count xs))
-        f)
-      (list 'Dim.init 'w 'h))))
+; (defmacro map-reduce2 [init xs f]
+;   (list 'let init
+;     (list 'do
+;       (list 'for (array 'i '0 (list 'count xs))
+;         f)
+;       (list '<> 'w 'h))))
 
-(defn get-dimentions-2 [tunnel]
-  (map-reduce [w 0 h 0] tunnel
+;; HACK, but exactly the same as a for loop
+; (defn get-dimentions [tunnel]
+;   (map-reduce2 [w 0 h 0] tunnel
+;     (do
+;       (set! w (max w @(=> (Cell.pos (nth tunnel i)) Pos.x)))
+;       (set! h (max h @(=> (Cell.pos (nth tunnel i)) Pos.y))))))
+
+(defn blit-to-grid [tunnel]
+  (let [dimentions (get-dimentions tunnel)
+        dsx @(<1> &dimentions)
+        dsy @(<2> &dimentions)
+        dex @(<3> &dimentions)
+        dey @(<4> &dimentions)
+        _ (println &(fmt "dsx %i" dsx))
+        _ (println &(fmt "dsy %i" dsy))
+        _ (println &(fmt "dex %i" dex))
+        _ (println &(fmt "dey %i" dey))
+        w (- dex dsx)
+        h (- dey dsy)
+        _ (println &(fmt "w %i" w))
+        _ (println &(fmt "h %i" h))
+        grid (replicate h &(replicate w &0))]
     (do
-      (set! w (max w @(=> (Cell.pos (nth tunnel i)) Pos.x)))
-      (set! h (max h @(=> (Cell.pos (nth tunnel i)) Pos.y))))))
-  ; (let [w 0]
-    ; (for [c 0 (count tunnel)]
-      ; (set! w (max w (=> (Cell.pos c) Pos.x)))))
+      (for [ti 0 (count tunnel)]
+        (let-do [cell (nth tunnel ti)
+              _ (println &(fmt "cell y %i" @(=> (Cell.pos cell) (Pos.y))))
+              xx (- (* @(=> (Cell.pos cell) (Pos.x)) 3) dsx)
+              yy (- (* @(=> (Cell.pos cell) (Pos.y)) 3) dsy)]
+          (println &(fmt "xx %i" xx))
+          (println &(fmt "yy %i" yy))
+          (for [ci 0 (count (Cell.data cell))]
+            (let [cx (mod ci 3)
+                  cy (/ ci 3)
+                  x (+ xx cx)
+                  y (+ yy cy)
+                  row (nth &grid y)
+                  _ (println &(fmt "> x %i" x))
+                  _ (println &(fmt "> y %i" y))
+                  value @(nth (Cell.data cell) ci)]
+                  ; _ (println &(str value))]
+              (aset! row x (- 1 value))))))
+      grid)))
 
-; (defn blit-to-grid [tunnel grid]
-;   (let [gw (count grid)]
-;     (for [ti 0 (count tunnel)]
-;       (let [cell (nth tunnel ti)
-;             xx @(=> (Cell.pos cell) (Pos.x))
-;             yy @(=> (Cell.pos cell) (Pos.y))]
-
-;         (for [ci 0 (count (Cell.data cell))]
-;           (let [tile (nth (Cell.data cell) ci)
-;                 x (mod i 3)
-;                 y (/ i 3)
-;                 index (+ (+ (* gw xx) x) (+ (* yy gw) (* y gw)))]
-;               (aset! grid index tile)))))))
-;               ; (do 
-;                 ; (if (= @(nth cell i) 1)
-;                   ; (SDL_SetRenderDrawColor renderer 0 0 0 255)
-;                   ; (SDL_SetRenderDrawColor renderer 255 255 255 255))
-;                 ; (SDL_RenderFillRect renderer (address 
-;                   ; (make-rect 
-;                     ; (- (* (+ xx (* x TS)) SCALE) cx)
-;                     ; (- (* (+ yy (* y TS)) SCALE) cy)
-;                     ; (* TS SCALE)
-;                     ; (* TS SCALE)))))))))
-;   
+(defn print-grid [grid]
+  (for [y 0 (count grid)]
+    (do
+      (for [x 0 (count (nth grid 0))]
+        (print &(str @(nth (nth grid y) x))))
+      (println ""))))
