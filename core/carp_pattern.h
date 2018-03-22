@@ -126,12 +126,12 @@ int Pattern_internal_matchbracketclass(int c, String p, String ec) {
     if (*p == C_ESC) {
       p++;
       if (Pattern_internal_match_class(c, uchar(*p))) return sig;
-    }
-    else if ((*(p+1) == '-') && (p+2 < ec)) {
+    } else if ((*(p+1) == '-') && (p+2 < ec)) {
       p+=2;
       if (uchar(*(p-2)) <= c && c <= uchar(*p)) return sig;
+    } else if (uchar(*p) == c) {
+      return sig;
     }
-    else if (uchar(*p) == c) return sig;
   }
   return !sig;
 }
@@ -162,8 +162,7 @@ String Pattern_internal_matchbalance(PatternMatchState *ms, String s, String p) 
     while (++s < ms->src_end) {
       if (*s == e) {
         if (--cont == 0) return s+1;
-      }
-      else if (*s == b) {
+      } else if (*s == b) {
         cont++;
       }
     }
@@ -298,12 +297,10 @@ String Pattern_internal_match(PatternMatchState *ms, String s, String p) {
         if (!Pattern_internal_singlematch(ms, s, p, ep)) {
           if (*ep == '*' || *ep == '?' || *ep == '-') {  /* accept empty? */
             p = ep + 1; goto init;  /* return match(ms, s, ep + 1); */
-          }
-          else { /* '+' or no suffix */
+          } else { /* '+' or no suffix */
             s = NULL;  /* fail */
           }
-        }
-        else {  /* matched once */
+        } else {  /* matched once */
           switch (*ep) {  /* handle optional suffix */
             case '?': {  /* optional */
               String res;
@@ -373,8 +370,7 @@ Array Pattern_internal_push_onecapture(PatternMatchState *ms, int i, String s,
   if (i >= ms->level) {
     if (!i) return Array_push_String(captures, s, i, ms->capture[i].len);  /* add whole match */
     else carp_regerror("invalid capture index %cd", C_ESC, i + 1);
-  }
-  else {
+  } else {
     ptrdiff_t l = ms->capture[i].len;
     if (l == CAP_UNFINISHED) carp_regerror("unfinished capture");
     else if (l != CAP_NONE) return Array_push_String(captures, ms->capture[i].init,
@@ -583,9 +579,9 @@ String Pattern_internal_add_value(PatternMatchState *ms, String res, String src,
           carp_regerror( "invalid use of '%c' in replacement String", C_ESC);
         }
         res = Pattern_internal_add_char(res, tr[i]);
-      }
-      else if (tr[i] == '0') res = String_append(res, src);
-      else {
+      } else if (tr[i] == '0') {
+        res = String_append(res, src);
+      } else {
         Array a = {.len = 0, .capacity = 0, .data = NULL};
         Pattern_internal_push_onecapture(ms, tr[i] - '1', src, e, a);
         res = String_append(res, ((String*)a.data)[0]);  /* add capture to accumulated result */
@@ -617,18 +613,20 @@ String Pattern_substitute(Pattern* p, String *s, String *t, int ns) {
       n++;
       res = Pattern_internal_add_value(&ms, res, str, e, tr);  /* add replacement to buffer */
       str = lastmatch = e;
-    }
-    else if (str < ms.src_end) res = Pattern_internal_add_char(res, *str++);
-    else break;  /* end of subject */
+    } else if (str < ms.src_end) {
+      res = Pattern_internal_add_char(res, *str++);
+    } else 
+      break;  /* end of subject */
     if (anchor) break;
   }
 
   if (!res) return String_copy(&str);
 
   int l = strlen(res)+strlen(str)+1;
-  res = realloc(res, l);
-  snprintf(res, l, "%s%s", res, str);
-  return res;
+  String buffer = CARP_MALLOC(l);
+  snprintf(buffer, l, "%s%s", res, str);
+  CARP_FREE(res);
+  return buffer;
 }
 
 Pattern Pattern_copy(Pattern *p) {
